@@ -37,5 +37,5 @@
     "dependencies": {
         "rxjs": "^6.5.5"
     },
-    "types": "index.d.ts"
+    "types": "dist/index.d.ts"
 }
