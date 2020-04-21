@@ -3,7 +3,7 @@ import { spawn, ChildProcessWithoutNullStreams } from 'child_process';
 import { Observable, Subject } from 'rxjs';
 import { Readable, Writable } from 'stream';
 import { wrap, Format } from './wrapper';
-import { take, last } from 'rxjs/operators'
+
 interface PowerShellStreams {
     success: string | Array<string>;
     error: string;
@@ -114,11 +114,9 @@ export class PowerShell {
         this.stderr.pipe(read_err);
 
         read_out.subject.subscribe((res) => {
-
             let result = JSON.parse(res).result as PowerShellStreams;
             let { error, warning, info } = result;
             let success = formatSuccessOutput(result);
-
             for (let item of success) this.$success.next(item);
             for (let item of error) this.$error.next(item);
             for (let item of warning) this.$warning.next(item);
@@ -138,23 +136,3 @@ export class PowerShell {
         this.powershell.kill();
     }
 }
-
-// let shell = new PowerShell();
-
-// shell.$success.subscribe(
-//     (res) => {
-//         console.log(res);
-//     },
-//     (err) => {
-//         console.log(err);
-//     }
-// );
-
-// shell.call(`Get-Date; Get-Date;`, 'csv');
-
-// shell.$error.subscribe(
-//     (res) => {
-//         console.log(res)
-//     }
-// );
-// shell.call(`throw "My Error";`);
