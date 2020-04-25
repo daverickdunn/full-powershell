@@ -41,5 +41,9 @@
     "repository": {
         "type": "git",
         "url": "https://github.com/daverickdunn/full-powershell.git"
+    },
+    "homepage": "https://github.com/daverickdunn/full-powershell",
+    "bugs": {
+        "url": "https://github.com/daverickdunn/full-powershell/issues"
     }
 }
