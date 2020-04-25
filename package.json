@@ -3,6 +3,7 @@
     "version": "1.0.0-alpha.0",
     "description": "",
     "main": "dist/index.js",
+    "types": "dist/index.d.ts",
     "scripts": {
         "build": "rimraf ./dist && tsc",
         "test": "jest --config jestconfig.json --watchAll",
@@ -37,5 +38,8 @@
     "dependencies": {
         "rxjs": "^6.5.5"
     },
-    "types": "dist/index.d.ts"
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/daverickdunn/full-powershell.git"
+    }
 }
