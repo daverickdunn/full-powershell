@@ -3,7 +3,7 @@ PowerShell has 6 message streams! That makes streaming directly through stdout a
 
 
 ## How it works
-This library accepts PowerShell commands as strings. It then injects them into a wrapper script that captures and serilises their output. This means that all 6 messages streams are captured and sorted at their source. Once sent back to NodejS they emit as 6 separate RxJS streams. I encourage users to take a look at [index.ts](https://github.com/daverickdunn/full-powershell/blob/master/src/index.ts) and [wrapper.ts](https://github.com/daverickdunn/full-powershell/blob/master/src/wrapper.ts) to see exactly how it works.
+This library accepts PowerShell commands as strings. It then injects them into a wrapper script that captures and serilises their output. This means that all 6 message streams are captured and sorted at their source. Once sent back to NodejS they emit as 6 separate RxJS streams. I encourage users to take a look at [index.ts](https://github.com/daverickdunn/full-powershell/blob/master/src/index.ts) and [wrapper.ts](https://github.com/daverickdunn/full-powershell/blob/master/src/wrapper.ts) to see exactly how it works.
 
 
 ## Usage

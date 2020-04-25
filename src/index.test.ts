@@ -20,7 +20,7 @@ test('Success', (done) => {
 test('Error', (done) => {
     shell.$error.subscribe(
         (res) => {
-            expect(res).toBe('My Error')
+            expect(res).toEqual(expect.stringContaining('My Error'))
             done();
         }
     );
