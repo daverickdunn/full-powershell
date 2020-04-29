@@ -5,40 +5,24 @@ import { Readable, Writable } from 'stream';
 import { wrap, Format } from './wrapper';
 
 interface PowerShellStreams {
-    success: string | Array<string>;
+    success: string;
     error: string;
     warning: string;
     info: string;
     format: Format;
 }
 
-function formatSuccessOutput(streams: PowerShellStreams){
-    if (streams.format === 'json'){
-        return JSON.parse(streams.success as string)
+function parseStream(stream: string, format: Format) {
+    if (format != null) {
+        return JSON.parse(stream);
+    } else {
+        return stream;
     }
-    if (streams.format === 'string'){
-        return streams.success
-    }
-    if (streams.format === 'csv'){
-        return streams.success
-    }
-    if (streams.format === 'html'){
-        return streams.success
-    }
-}
-
-function replace(buffer: Buffer, a: Buffer, b: Buffer) {
-    const idx = buffer.indexOf(a);
-    if (idx === -1) return buffer;
-    const before = buffer.slice(0, idx);
-    const after = buffer.slice(idx + a.length);
-    const len = before.length + b.length + after.length;
-    return Buffer.concat([before, b, after], len);
 }
 
 class BufferReader extends Writable {
     public subject = new Subject<string>();
-    private chunks: Array<Buffer> = [];
+    private buffer: Buffer = new Buffer('');
     private eoi: Buffer;
 
     constructor(eoi: string) {
@@ -46,17 +30,20 @@ class BufferReader extends Writable {
         this.eoi = Buffer.from(eoi);
     }
 
+    extract(): Buffer {
+        let idx = this.buffer.indexOf(this.eoi);
+        let data = this.buffer.slice(0, idx);
+        this.buffer = this.buffer.slice(idx + this.eoi.length);
+        return data;
+    }
+
     _write(chunk: Buffer, encoding: string, callback: Function) {
-        if (chunk.includes(this.eoi)) {
-            let cleaned = replace(chunk, this.eoi, Buffer.from(''));
-            this.chunks.push(cleaned);
-            this.subject.next(Buffer.concat(this.chunks).toString('utf8'));
-            this.chunks = [];
-            callback();
-        } else {
-            this.chunks.push(chunk);
-            callback();
+        this.buffer = Buffer.concat([this.buffer, chunk]);
+        while (this.buffer.includes(this.eoi)) {
+            const extracted = this.extract();
+            this.subject.next(extracted.toString('utf8'));
         }
+        callback();
     }
 }
 
@@ -72,12 +59,12 @@ function write(stream: Writable, string: string) {
 }
 
 export class PowerShell {
-    public $success = new Subject<string>();
-    public $error = new Subject<string>();
-    public $warning = new Subject<string>();
-    public $verbose = new Subject<string>();
-    public $debug = new Subject<string>();
-    public $info = new Subject<string>();
+    public $success = new Subject<Array<string>>();
+    public $error = new Subject<Array<string>>();
+    public $warning = new Subject<Array<string>>();
+    public $verbose = new Subject<Array<string>>();
+    public $debug = new Subject<Array<string>>();
+    public $info = new Subject<Array<string>>();
 
     private powershell: ChildProcessWithoutNullStreams;
     private stdin: Writable;
@@ -114,17 +101,26 @@ export class PowerShell {
         this.stderr.pipe(read_err);
 
         read_out.subject.subscribe((res) => {
-            let result = JSON.parse(res).result as PowerShellStreams;
-            let { error, warning, info } = result;
-            let success = formatSuccessOutput(result);
-            for (let item of success) this.$success.next(item);
-            for (let item of error) this.$error.next(item);
-            for (let item of warning) this.$warning.next(item);
-            for (let item of info) this.$info.next(item);
+            try {
+                let result = JSON.parse(res).result as PowerShellStreams;
+                let success = parseStream(result.success, result.format);
+                let error = parseStream(result.error, 'json');
+                let warning = parseStream(result.warning, 'json');
+                let info = parseStream(result.info, 'json');
+
+                if (success.length > 0) this.$success.next(success);
+                if (error.length > 0) this.$error.next(error);
+                if (warning.length > 0) this.$warning.next(warning);
+                if (info.length > 0) this.$info.next(info);
+            } catch (e) {
+                console.log(res);
+                console.log(e);
+                console.log(process.eventNames());
+            }
         });
 
         read_err.subject.subscribe((res) => {
-            this.$error.next(res);
+            this.$error.next([res]);
         });
     }
 
