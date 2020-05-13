@@ -22,24 +22,27 @@ function parseStream(stream: string, format: Format) {
 
 class BufferReader extends Writable {
     public subject = new Subject<string>();
-    private buffer: Buffer = new Buffer('');
-    private eoi: Buffer;
+    private buffer: Buffer = Buffer.from('');
+    private head: Buffer;
+    private tail: Buffer;
 
-    constructor(eoi: string) {
+    constructor(head: string, tail: string) {
         super();
-        this.eoi = Buffer.from(eoi);
+        this.head = Buffer.from(head);
+        this.tail = Buffer.from(tail);
     }
 
     extract(): Buffer {
-        let idx = this.buffer.indexOf(this.eoi);
-        let data = this.buffer.slice(0, idx);
-        this.buffer = this.buffer.slice(idx + this.eoi.length);
+        let head_idx = this.buffer.indexOf(this.head);
+        let tail_idx = this.buffer.indexOf(this.tail);
+        let data = this.buffer.slice(head_idx + this.head.length, tail_idx);
+        this.buffer = this.buffer.slice(tail_idx + this.tail.length);
         return data;
     }
 
     _write(chunk: Buffer, encoding: string, callback: Function) {
         this.buffer = Buffer.concat([this.buffer, chunk]);
-        while (this.buffer.includes(this.eoi)) {
+        while (this.buffer.includes(this.tail)) {
             const extracted = this.extract();
             this.subject.next(extracted.toString('utf8'));
         }
@@ -51,9 +54,9 @@ function write(stream: Writable, string: string) {
     return new Observable((sub) => {
         let success = stream.write(Buffer.from(string));
         if (success) {
-            sub.next(string);
+            sub.next();
         } else {
-            stream.once('drain', () => sub.next(string));
+            stream.once('drain', () => sub.next());
         }
     });
 }
@@ -70,7 +73,8 @@ export class PowerShell {
     private stdin: Writable;
     private stdout: Readable;
     private stderr: Readable;
-    private EOI = 'F0ZU7Wm1p4';
+    private delimit_head = 'F0ZU7Wm1p4';
+    private delimit_tail = 'AdBmCXEdsB';
 
     constructor() {
         const args = ['-NoLogo', '-NoExit', '-Command', '-'];
@@ -94,13 +98,13 @@ export class PowerShell {
         this.stdout = this.powershell.stdout;
         this.stderr = this.powershell.stderr;
 
-        let read_out = new BufferReader(this.EOI);
-        let read_err = new BufferReader(this.EOI);
+        let read_out = new BufferReader(this.delimit_head, this.delimit_tail);
+        let read_err = new BufferReader(this.delimit_head, this.delimit_tail);
 
         this.stdout.pipe(read_out);
         this.stderr.pipe(read_err);
 
-        read_out.subject.subscribe((res) => {
+        read_out.subject.subscribe((res: string) => {
             try {
                 let result = JSON.parse(res).result as PowerShellStreams;
                 let success = parseStream(result.success, result.format);
@@ -125,7 +129,7 @@ export class PowerShell {
     }
 
     call(string: string, format: Format = 'json'): void {
-        write(this.stdin, wrap(string, this.EOI, format)).subscribe();
+        write(this.stdin, wrap(string, this.delimit_head, this.delimit_tail, format)).subscribe();
     }
 
     destroy() {

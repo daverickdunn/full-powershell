@@ -13,10 +13,12 @@ function serialise(variable: string, format: Format) {
     }
 }
 
-export function wrap(command: string, EOI: string, format: Format) {
+export function wrap(command: string, delimit_head: string, delimit_tail: string, format: Format) {
     const template = `
-    $EOI_1 = "${EOI.slice(0, 5)}"
-    $EOI_2 = "${EOI.slice(5)}"
+    $delimit_head_A = "${delimit_head.slice(0, 5)}"
+    $delimit_head_B = "${delimit_head.slice(5)}"
+    $delimit_tail_A = "${delimit_tail.slice(0, 5)}"
+    $delimit_tail_B = "${delimit_tail.slice(5)}"
     try {
         Invoke-Command -ScriptBlock {
             ${command}
@@ -34,7 +36,7 @@ export function wrap(command: string, EOI: string, format: Format) {
             }
         }
         $rxjs_pwsh_json = $rxjs_pwsh | ConvertTo-Json -Depth 2
-        $rxjs_pwsh_json + "$EOI_1$EOI_2"
+        "$delimit_head_A$delimit_head_B" + $rxjs_pwsh_json + "$delimit_tail_A$delimit_tail_B"
     }
     ${os.EOL}
     `;
