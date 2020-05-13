@@ -15,15 +15,15 @@ import { PowerShell } from 'full-powershell';
 
 let powershell = new PowerShell();
 
-powershell.$success.subscribe(res => {
+powershell.success$.subscribe(res => {
     console.log('success:', res)
 })
 
-powershell.$error.subscribe(res => {
+powershell.error$.subscribe(res => {
     console.log('error:', res)
 })
 
-powershell.$warning.subscribe(res => {
+powershell.warning$.subscribe(res => {
     console.log('warning:', res)
 })
 

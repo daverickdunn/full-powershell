@@ -8,7 +8,7 @@ afterAll((done) => {
 });
 
 test('Success JSON', (done) => {
-    let sub = shell.$success.subscribe(
+    let sub = shell.success$.subscribe(
         (res) => {
             expect(res[0]).toHaveProperty('DateTime');
             sub.unsubscribe();
@@ -19,7 +19,7 @@ test('Success JSON', (done) => {
 });
 
 test('Success String', (done) => {
-    let sub = shell.$success.subscribe(
+    let sub = shell.success$.subscribe(
         (res) => {
             expect(res[0]).toMatch('This is a test string');
             sub.unsubscribe();
@@ -30,7 +30,7 @@ test('Success String', (done) => {
 });
 
 test('Error', (done) => {
-    let sub = shell.$error.subscribe(
+    let sub = shell.error$.subscribe(
         (res) => {
             expect(res[0]).toEqual(expect.stringContaining('My Error'));
             sub.unsubscribe();
@@ -41,7 +41,7 @@ test('Error', (done) => {
 });
 
 test('Warning', (done) => {
-    let sub = shell.$warning.subscribe(
+    let sub = shell.warning$.subscribe(
         (res) => {
             expect(res[0]).toEqual(expect.stringContaining('My Warning'));
             sub.unsubscribe();
@@ -52,7 +52,7 @@ test('Warning', (done) => {
 });
 
 test('Success Multi JSON', (done) => {
-    let sub = shell.$success.subscribe(
+    let sub = shell.success$.subscribe(
         (res) => {
             expect(res[0]).toHaveProperty('DateTime');
             expect(res[1]).toHaveProperty('DateTime');
@@ -64,7 +64,7 @@ test('Success Multi JSON', (done) => {
 });
 
 test('Success Multi String', (done) => {
-    let sub = shell.$success.subscribe(
+    let sub = shell.success$.subscribe(
         (res) => {
             expect(res[0]).toMatch('This is a test string');
             expect(res[1]).toMatch('This is another test string');
