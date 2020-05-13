@@ -1,7 +1,7 @@
 import os from 'os';
 import { spawn, ChildProcessWithoutNullStreams } from 'child_process';
 import { Observable, Subject, ReplaySubject, zip } from 'rxjs';
-import { map, publish } from 'rxjs/operators';
+import { map, publish, switchMap, take } from 'rxjs/operators';
 import { Readable, Writable } from 'stream';
 import { wrap, Format } from './wrapper';
 
@@ -77,7 +77,7 @@ export class PowerShell {
     private delimit_head = 'F0ZU7Wm1p4';
     private delimit_tail = 'AdBmCXEdsB';
 
-    private command$ = new Subject<string>();
+    private command$ = new Subject<[string, Subject<Array<string>>]>();
     private ready$ = new ReplaySubject(1);
 
     constructor() {
@@ -132,7 +132,6 @@ export class PowerShell {
             } catch (e) {
                 console.log(res);
                 console.log(e);
-                console.log(process.eventNames());
             } finally {
                 this.ready$.next();
             }
@@ -147,14 +146,21 @@ export class PowerShell {
         zip(this.command$, this.ready$).pipe(
             map((values) => values[0]),
             publish((hot$) => hot$)
-        ).subscribe(command => {
-            write(this.stdin, command).subscribe();
+        ).subscribe(([command, callback$]) => {
+            write(this.stdin, command).pipe(
+                switchMap(() => this.success$.pipe(take(1)))
+            ).subscribe(res => {
+                callback$.next(res);
+                callback$.complete();
+            })
         })
     }
 
-    public call(string: string, format: Format = 'json'): void {
+    public call(string: string, format: Format = 'json'): Subject<Array<string>> {
         const command = wrap(string, this.delimit_head, this.delimit_tail, format);
-        this.command$.next(command);
+        const call$ = new Subject<Array<string>>();
+        this.command$.next([command, call$]);
+        return call$;
     }
 
     public destroy() {
