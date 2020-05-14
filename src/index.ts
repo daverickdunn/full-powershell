@@ -14,10 +14,10 @@ interface RawStreams {
 }
 
 export interface PowerShellStreams {
-    success: Array<string>;
-    error: Array<string>;
-    warning: Array<string>;
-    info: Array<string>;
+    success: Array<any>;
+    error: Array<any>;
+    warning: Array<any>;
+    info: Array<any>;
 }
 
 function parseStream(stream: string, format: Format) {
