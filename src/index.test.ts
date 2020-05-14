@@ -74,3 +74,15 @@ test('Success Multi String', (done) => {
     );
     shell.call(`Write-Output "This is a test string"; Write-Output "This is another test string";`, 'string');
 });
+
+test('Call Structure', (done) => {
+    let sub = shell.call(`Write-Output "This is a test string";`, 'string')
+    .subscribe(res => {
+        expect(res).toHaveProperty('success');
+        expect(res).toHaveProperty('error');
+        expect(res).toHaveProperty('warning');
+        expect(res).toHaveProperty('info');
+        sub.unsubscribe();
+        done();
+    })
+});

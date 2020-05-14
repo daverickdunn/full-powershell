@@ -5,12 +5,19 @@ import { map, publish, switchMap, take } from 'rxjs/operators';
 import { Readable, Writable } from 'stream';
 import { wrap, Format } from './wrapper';
 
-interface PowerShellStreams {
+interface RawStreams {
     success: string;
     error: string;
     warning: string;
     info: string;
     format: Format;
+}
+
+export interface PowerShellStreams {
+    success: Array<string>;
+    error: Array<string>;
+    warning: Array<string>;
+    info: Array<string>;
 }
 
 function parseStream(stream: string, format: Format) {
@@ -77,8 +84,9 @@ export class PowerShell {
     private delimit_head = 'F0ZU7Wm1p4';
     private delimit_tail = 'AdBmCXEdsB';
 
-    private command$ = new Subject<[string, Subject<Array<string>>]>();
+    private command$ = new Subject<[string, Subject<PowerShellStreams>]>();
     private ready$ = new ReplaySubject(1);
+    private streams$ = new Subject<PowerShellStreams>();
 
     constructor() {
         this.initPowerShell();
@@ -119,16 +127,23 @@ export class PowerShell {
 
         read_out.subject.subscribe((res: string) => {
             try {
-                let result = JSON.parse(res).result as PowerShellStreams;
+                let result = JSON.parse(res).result as RawStreams;
                 let success = parseStream(result.success, result.format);
                 let error = parseStream(result.error, 'json');
                 let warning = parseStream(result.warning, 'json');
                 let info = parseStream(result.info, 'json');
 
+                let streams: PowerShellStreams = {
+                    success, error, warning, info
+                };
+
+                this.streams$.next(streams);
+
                 if (success.length > 0) this.success$.next(success);
                 if (error.length > 0) this.error$.next(error);
                 if (warning.length > 0) this.warning$.next(warning);
                 if (info.length > 0) this.info$.next(info);
+
             } catch (e) {
                 console.log(res);
                 console.log(e);
@@ -148,7 +163,7 @@ export class PowerShell {
             publish((hot$) => hot$)
         ).subscribe(([command, callback$]) => {
             write(this.stdin, command).pipe(
-                switchMap(() => this.success$.pipe(take(1)))
+                switchMap(() => this.streams$.pipe(take(1)))
             ).subscribe(res => {
                 callback$.next(res);
                 callback$.complete();
@@ -156,9 +171,9 @@ export class PowerShell {
         })
     }
 
-    public call(string: string, format: Format = 'json'): Subject<Array<string>> {
+    public call(string: string, format: Format = 'json'): Subject<PowerShellStreams> {
         const command = wrap(string, this.delimit_head, this.delimit_tail, format);
-        const call$ = new Subject<Array<string>>();
+        const call$ = new Subject<PowerShellStreams>();
         this.command$.next([command, call$]);
         return call$;
     }
