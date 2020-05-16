@@ -70,12 +70,12 @@ function write(stream: Writable, string: string) {
 }
 
 export class PowerShell {
-    public success$ = new Subject<Array<string>>();
-    public error$ = new Subject<Array<string>>();
-    public warning$ = new Subject<Array<string>>();
-    public verbose$ = new Subject<Array<string>>();
-    public debug$ = new Subject<Array<string>>();
-    public info$ = new Subject<Array<string>>();
+    public success$ = new Subject<Array<any>>();
+    public error$ = new Subject<Array<any>>();
+    public warning$ = new Subject<Array<any>>();
+    public verbose$ = new Subject<Array<any>>();
+    public debug$ = new Subject<Array<any>>();
+    public info$ = new Subject<Array<any>>();
 
     private powershell: ChildProcessWithoutNullStreams;
     private stdin: Writable;
@@ -179,6 +179,6 @@ export class PowerShell {
     }
 
     public destroy() {
-        this.powershell.kill();
+        return this.powershell.kill();
     }
 }
