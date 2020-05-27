@@ -19,9 +19,8 @@ class PowerShell {
     verbose$: Subject<Array<any>>();
     debug$: Subject<Array<any>>();
     info$: Subject<Array<any>>();
-
     call(string: string, format: Format = 'json'): Subject<PowerShellStreams>;
-    destroy(): boolean
+    destroy(): boolean;
 }
 ```
 
@@ -31,12 +30,14 @@ interface PowerShellStreams {
     success: Array<any>;
     error: Array<any>;
     warning: Array<any>;
+    verbose: Array<any>;
+    debug: Array<any>;
     info: Array<any>;
 }
 ```
 
 # Semantics
-The subjects subscribed to on the instantiated `PowerShell` class, as well as the one returned by `PowerShell.call` all return arrays. It's important to note that these arrays reflect the output from each _PowerShell command_ contained in the single string passed to `PowerShell.call`. So for example, if you were to call `PowerShell.call('Get-Date; Get-Date;')`, you should expect to receive an Array containing two items in the next emission.
+The subjects provided by the `PowerShell` class, as well as the singleton observable returned by `PowerShell.call` all return arrays. It's important to note that these arrays reflect the output for each _PowerShell command_ contained in the single string passed to `PowerShell.call`. So for example, if you were to call `PowerShell.call('Get-Date; Get-Date;')`, you should expect to receive an Array containing two items in the next emission. However, there are exceptions to this - **debug** and **verbose** are *newline* delimited due to limitations of PowerShell redirection. While they will generally equate to one string per `Write-Debug` or `Write-Verbose`, it is up to you to ensure output has not been broken into multiple lines.
 
 # Usage
 
@@ -47,7 +48,7 @@ import { PowerShell } from 'full-powershell';
 ```
 CommonJS
 ```typescript
-const PowerShell = require('full-powershell')
+const PowerShell = require('full-powershell');
 ```
 
 ## Instantiaing:
@@ -81,7 +82,7 @@ shell.call('My-Command')
     (err: Error) => {
         /* error handler */
     }
-)
+);
 ```
 Subscribe to individual streams (observe all output i.e. all emissions of that type):
 ```typescript
@@ -95,13 +96,13 @@ shell.success$
     (err: Error) => {
         /* error handler */
     }
-)
+);
 
-shell.error$.subscribe( /* same as success$ */)
-shell.warning$.subscribe( /* same as success$ */)
-shell.verbose$.subscribe( /* same as success$ */)
-shell.debug$.subscribe( /* same as success$ */)
-shell.info$.subscribe( /* same as success$ */)
+shell.error$.subscribe( /* same as success$ */);
+shell.warning$.subscribe( /* same as success$ */);
+shell.verbose$.subscribe( /* same as success$ */);
+shell.debug$.subscribe( /* same as success$ */);
+shell.info$.subscribe( /* same as success$ */);
 ```
 
 # Example:
@@ -135,5 +136,5 @@ powershell.call('Get-Date; Write-Warning "My Warning";', 'json')
     err => {
         console.error(err);
     }
-)
+);
 ```
