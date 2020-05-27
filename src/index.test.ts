@@ -21,34 +21,67 @@ test('Success JSON', (done) => {
 test('Success String', (done) => {
     let sub = shell.success$.subscribe(
         (res) => {
-            expect(res[0]).toMatch('This is a test string');
+            expect(res[0]).toMatch('Testing Write-Output');
             sub.unsubscribe();
             done();
         }
     );
-    shell.call(`Write-Output "This is a test string";`, 'string');
+    shell.call(`Write-Output "Testing Write-Output";`, 'string');
 });
 
 test('Error', (done) => {
     let sub = shell.error$.subscribe(
         (res) => {
-            expect(res[0]).toEqual(expect.stringContaining('My Error'));
+            expect(res[0]).toEqual(expect.stringContaining('Testing Write-Error'));
             sub.unsubscribe();
             done();
         }
     );
-    shell.call(`Write-Error "My Error";`);
+    shell.call(`Write-Error "Testing Write-Error";`);
 });
 
 test('Warning', (done) => {
     let sub = shell.warning$.subscribe(
         (res) => {
-            expect(res[0]).toEqual(expect.stringContaining('My Warning'));
+            expect(res[0]).toEqual(expect.stringContaining('Testing Write-Warning'));
             sub.unsubscribe();
             done();
         }
     );
-    shell.call(`Write-Warning "My Warning";`);
+    shell.call(`Write-Warning "Testing Write-Warning";`);
+});
+
+test('Verbose', (done) => {
+    let sub = shell.verbose$.subscribe(
+        (res) => {
+            expect(res[0]).toEqual(expect.stringContaining('Testing Write-Verbose'));
+            sub.unsubscribe();
+            done();
+        }
+    );
+    shell.call(`$VerbosePreference = 'Continue'; Write-Verbose "Testing Write-Verbose";`);
+});
+
+test('Debug', (done) => {
+    let sub = shell.debug$.subscribe(
+        (res) => {
+            expect(res[0]).toEqual(expect.stringContaining('Testing Write-Debug'));
+            sub.unsubscribe();
+            done();
+        }
+    );
+    shell.call(`$DebugPreference = 'Continue'; Write-Debug "Testing Write-Debug";`);
+});
+
+test('Info', (done) => {
+    let sub = shell.info$.subscribe(
+        (res) => {
+            expect(res[0]).toEqual(expect.stringContaining('Testing Write-Information'));
+            sub.unsubscribe();
+            done();
+        }
+    );
+    shell.call(`$InformationPreference = 'Continue'; Write-Information "Testing Write-Information";`);
 });
 
 test('Success Multi JSON', (done) => {

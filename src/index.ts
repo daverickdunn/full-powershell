@@ -21,6 +21,8 @@ interface RawStreams {
     success: string;
     error: string;
     warning: string;
+    verbose: string;
+    debug: string;
     info: string;
     format: Format;
 }
@@ -29,6 +31,8 @@ export interface PowerShellStreams {
     success: Array<any>;
     error: Array<any>;
     warning: Array<any>;
+    verbose: Array<any>;
+    debug: Array<any>;
     info: Array<any>;
 }
 
@@ -178,20 +182,26 @@ export class PowerShell {
                 let success = parseStream(result.success, result.format);
                 let error = parseStream(result.error, 'json');
                 let warning = parseStream(result.warning, 'json');
+                let verbose = parseStream(result.verbose, 'string');
+                let debug = parseStream(result.debug, 'string');
                 let info = parseStream(result.info, 'json');
 
                 if (success.length > 0) this.success$.next(success);
                 if (error.length > 0) this.error$.next(error);
                 if (warning.length > 0) this.warning$.next(warning);
+                if (verbose.length > 0) this.verbose$.next(verbose);
+                if (debug.length > 0) this.debug$.next(debug);
                 if (info.length > 0) this.info$.next(info);
 
                 let streams: PowerShellStreams = {
                     success,
                     error,
                     warning,
+                    verbose,
+                    debug,
                     info,
                 };
-
+                
                 return streams;
             }),
             finalize(() => this.ready$.next(true))
