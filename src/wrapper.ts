@@ -23,7 +23,7 @@ export function wrap(command: string, delimit_head: string, delimit_tail: string
     $delimit_tail_A = "${delimit_tail.slice(0, 5)}"
     $delimit_tail_B = "${delimit_tail.slice(5)}"
     try {
-        Invoke-Command -ScriptBlock {
+        Invoke-Command -NoNewScope -ScriptBlock {
             ${command}
         } 1>$null 2>$null 3>$null 4>$vv 5>$dv 6>$null -ov ov -ev ev -wv wv -iv iv
     } 

@@ -119,3 +119,12 @@ test('Call Structure', (done) => {
         done();
     })
 });
+
+test('Variable Scope', (done) => {
+    shell.call(`$XYZ = 'something';`);
+    let sub = shell.call(`Write-Output $XYZ;`).subscribe(res => {
+        expect(res.success).toContain('something');
+        sub.unsubscribe();
+        done();
+    })
+});
