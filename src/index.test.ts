@@ -110,14 +110,14 @@ test('Success Multi String', (done) => {
 
 test('Call Structure', (done) => {
     let sub = shell.call(`Write-Output "This is a test string";`, 'string')
-    .subscribe(res => {
-        expect(res).toHaveProperty('success');
-        expect(res).toHaveProperty('error');
-        expect(res).toHaveProperty('warning');
-        expect(res).toHaveProperty('info');
-        sub.unsubscribe();
-        done();
-    })
+        .subscribe(res => {
+            expect(res).toHaveProperty('success');
+            expect(res).toHaveProperty('error');
+            expect(res).toHaveProperty('warning');
+            expect(res).toHaveProperty('info');
+            sub.unsubscribe();
+            done();
+        })
 });
 
 test('Variable Scope', (done) => {
@@ -127,4 +127,16 @@ test('Variable Scope', (done) => {
         sub.unsubscribe();
         done();
     })
+});
+
+test('Promises', (done) => {
+    shell.call(`Write-Output "Testing Promises";`, 'string').promise()
+        .then(res => {
+            expect(res.success[0]).toMatch('Testing Promises');
+            return shell.call(`Write-Output "Testing More Promises";`, 'string').promise();
+        })
+        .then(res => {
+            expect(res.success[0]).toMatch('Testing More Promises');
+            done();
+        })
 });

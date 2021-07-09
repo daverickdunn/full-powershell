@@ -1,6 +1,6 @@
 import { ChildProcessWithoutNullStreams, spawn } from 'child_process';
 import os from 'os';
-import { BehaviorSubject, combineLatest, Observable, Subject } from 'rxjs';
+import { BehaviorSubject, combineLatest, firstValueFrom, Observable, Subject } from 'rxjs';
 import { finalize, map, take } from 'rxjs/operators';
 import { Readable, Writable } from 'stream';
 import { Format, wrap } from './wrapper';
@@ -41,6 +41,12 @@ function parseStream(stream: string, format: Format) {
         return JSON.parse(stream);
     } else {
         return stream;
+    }
+}
+
+class SubjectWithPromise<T> extends Subject<T> {
+    async promise() {
+        return firstValueFrom(this);
     }
 }
 
@@ -114,9 +120,6 @@ export class PowerShell {
         this.initReaders();
         this.initQueue();
         this.ready$.next(true);
-
-        this.ready$.subscribe((res) => log.info('Ready: %s', res));
-        this.queued$.subscribe((res) => log.info('Queued: %s', res.command));
     }
 
     private initPowerShell() {
@@ -153,21 +156,22 @@ export class PowerShell {
     }
 
     private initQueue() {
-        combineLatest(this.queued$, this.ready$)
-        .subscribe(([_, ready]) => {
-            if (ready && this.queue.length > 0) {
-                let next = this.queue.shift() as QueuedCommand;
-                this._call(next.wrapped).subscribe(
-                    (res) => {
-                        next.subject.next(res);
-                        next.subject.complete();
-                    },
-                    (err) => {
-                        next.subject.error(err);
-                    }
-                );
-            }
-        });
+        combineLatest([this.queued$, this.ready$])
+            .subscribe(([_, ready]) => {
+                if (ready && this.queue.length > 0) {
+                    let next = this.queue.shift() as QueuedCommand;
+                    log.info('Running: %O', next.command)
+                    this._call(next.wrapped).subscribe(
+                        (res) => {
+                            next.subject.next(res);
+                            next.subject.complete();
+                        },
+                        (err) => {
+                            next.subject.error(err);
+                        }
+                    );
+                }
+            });
     }
 
     private _call(wrapped: string): Observable<PowerShellStreams> {
@@ -201,7 +205,7 @@ export class PowerShell {
                     debug,
                     info,
                 };
-                
+
                 return streams;
             }),
             finalize(() => this.ready$.next(true))
@@ -209,7 +213,7 @@ export class PowerShell {
     }
 
     public call(command: string, format: Format = 'json') {
-        const subject = new Subject<PowerShellStreams>();
+        const subject = new SubjectWithPromise<PowerShellStreams>();
         const wrapped = wrap(
             command,
             this.delimit_head,

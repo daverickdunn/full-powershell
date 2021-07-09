@@ -12,14 +12,14 @@ This library accepts PowerShell commands as strings. It then transparently wraps
 
 `PowerShell` class. Spawns a PowerShell child process and exposes methods to read/write to/from that process:
 ```typescript
-class PowerShell {
+interface PowerShell {
     success$: Subject<Array<any>>();
     error$: Subject<Array<any>>();
     warning$: Subject<Array<any>>();
     verbose$: Subject<Array<any>>();
     debug$: Subject<Array<any>>();
     info$: Subject<Array<any>>();
-    call(string: string, format: Format = 'json'): Subject<PowerShellStreams>;
+    call(string: string, format: Format = 'json'): SubjectWithPromise<PowerShellStreams>;
     destroy(): boolean;
 }
 ```
@@ -51,7 +51,7 @@ CommonJS
 const PowerShell = require('full-powershell');
 ```
 
-## Instantiaing:
+## Instantiation:
 ```typescript
 const shell = new PowerShell();
 ```
@@ -71,7 +71,7 @@ Return result object using default string output:
 shell.call('My-Command', null);
 ```
 
-## Subscribing:
+## Subscribing to Observables:
 Subscribe directly to a call (observable will complete after first emission):
 ```typescript
 shell.call('My-Command')
@@ -103,6 +103,17 @@ shell.warning$.subscribe( /* same as success$ */);
 shell.verbose$.subscribe( /* same as success$ */);
 shell.debug$.subscribe( /* same as success$ */);
 shell.info$.subscribe( /* same as success$ */);
+```
+
+## Promises:
+The `Observable` returned by the `call` method has been extended to expose a function called `promise()` which returns a promise which will emit the first value returned by the shell.
+
+```typescript
+shell.call('My-Command')
+.promise()
+.then((res: PowerShellStreams) => {
+    /* result handler */
+})
 ```
 
 # Example:
