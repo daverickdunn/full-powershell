@@ -10,34 +10,50 @@ This library accepts PowerShell commands as strings. It then transparently wraps
 
 # API
 
-`PowerShell` class. Spawns a PowerShell child process and exposes methods to read/write to/from that process:
+## `PowerShell` class.
+Spawns a PowerShell child process and exposes methods to read/write to/from that process:
 ```typescript
-interface PowerShell {
-    success$: Subject<Array<any>>();
-    error$: Subject<Array<any>>();
-    warning$: Subject<Array<any>>();
-    verbose$: Subject<Array<any>>();
-    debug$: Subject<Array<any>>();
-    info$: Subject<Array<any>>();
+class PowerShell {
+    constructor(private options?: PowerShellOptions);
+    success$: Subject<any[]>();
+    error$: Subject<any[]>>();
+    warning$: Subject<any[]>();
+    verbose$: Subject<any[]>();
+    debug$: Subject<any[]>();
+    info$: Subject<any[]>();
     call(string: string, format: Format = 'json'): SubjectWithPromise<PowerShellStreams>;
     destroy(): boolean;
 }
 ```
 
-`PowerShellStreams` object. Emittied by the Subject returned from `PowerShell.call`.
+_Note: `SubjectWithPromise` will only emit the first value returned by PowerShell, this could be a warning, error, etc. Use the streams postfixed with `$` to handle all output from PowerShell._
+
+
+## `PowerShellStreams` object.
+Emittied by the `<Observable|Promise>` returned from `.call().subscribe()` and `.call().promise()`, respectively.
 ```typescript
 interface PowerShellStreams {
-    success: Array<any>;
-    error: Array<any>;
-    warning: Array<any>;
-    verbose: Array<any>;
-    debug: Array<any>;
-    info: Array<any>;
+    success: any[];
+    error: any[];
+    warning: any[];
+    verbose: any[];
+    debug: any[];
+    info: any[];
 }
 ```
 
+## `PowerShellOptions` object.
+Optional configuration options for the `PowerShell` class.
+```typescript
+interface PowerShellOptions {
+    tmp_dir?: string
+}
+```
+
+- `tmp_dir` - Change the path for ephemeral '.tmp' files. Must have a trailing slash. (Must be set to `/tmp/` when executing on AWS Lambda)
+
 # Semantics
-The subjects provided by the `PowerShell` class, as well as the singleton observable returned by `PowerShell.call` all return arrays. It's important to note that these arrays reflect the output for each _PowerShell command_ contained in the single string passed to `PowerShell.call`. So for example, if you were to call `PowerShell.call('Get-Date; Get-Date;')`, you should expect to receive an Array containing two items in the next emission. However, there are exceptions to this - **debug** and **verbose** are *newline* delimited due to limitations of PowerShell redirection. While they will generally equate to one string per `Write-Debug` or `Write-Verbose`, it is up to you to ensure output has not been broken into multiple lines.
+The subjects provided by the `PowerShell` class, as well as the singleton observable returned by `PowerShell.call` all return arrays of either strings or parsed JSON. It's important to note that these arrays reflect the output for each _PowerShell command_ contained in the single string passed to `PowerShell.call`. So for example, if you were to call `PowerShell.call('Get-Date; Get-Date;')`, you should expect to receive an Array containing two items in the next emission. However, there are exceptions to this - **debug** and **verbose** are *newline* delimited due to limitations of PowerShell redirection. While they will generally equate to one string per `Write-Debug` or `Write-Verbose`, it is up to you to ensure output has not been broken into multiple lines.
 
 # Usage
 

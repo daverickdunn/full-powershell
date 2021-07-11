@@ -91,6 +91,10 @@ function write(stream: Writable, string: string) {
     });
 }
 
+interface PowerShellOptions {
+    tmp_dir?: string
+}
+
 export class PowerShell {
     public success$ = new Subject<Array<any>>();
     public error$ = new Subject<Array<any>>();
@@ -115,11 +119,18 @@ export class PowerShell {
     private ready$ = new BehaviorSubject<boolean>(false);
     private queued$ = new Subject<QueuedCommand>();
 
-    constructor() {
+    private tmp_dir = '';
+
+    constructor(private options?: PowerShellOptions) {
+        if (!!options) this.setOptions(options);
         this.initPowerShell();
         this.initReaders();
         this.initQueue();
         this.ready$.next(true);
+    }
+
+    setOptions(options: PowerShellOptions) {
+        if (options.tmp_dir) this.tmp_dir = options.tmp_dir;
     }
 
     private initPowerShell() {
@@ -218,7 +229,8 @@ export class PowerShell {
             command,
             this.delimit_head,
             this.delimit_tail,
-            format
+            format,
+            this.tmp_dir
         );
         const queued: QueuedCommand = {
             command: command,

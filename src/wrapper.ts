@@ -13,11 +13,11 @@ function serialise(variable: string, format: Format) {
     }
 }
 
-export function wrap(command: string, delimit_head: string, delimit_tail: string, format: Format) {
+export function wrap(command: string, delimit_head: string, delimit_tail: string, format: Format, tmp_dir: string) {
     const template = `
     $OutputEncoding = [Console]::OutputEncoding = [Text.UTF8Encoding]::UTF8;
-    $vv = "fps_verbose.tmp"
-    $dv = "fps_debug.tmp"
+    $vv = "${tmp_dir}fps_verbose.tmp"
+    $dv = "${tmp_dir}fps_debug.tmp"
     $delimit_head_A = "${delimit_head.slice(0, 5)}"
     $delimit_head_B = "${delimit_head.slice(5)}"
     $delimit_tail_A = "${delimit_tail.slice(0, 5)}"

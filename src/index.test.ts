@@ -140,3 +140,17 @@ test('Promises', (done) => {
             done();
         })
 });
+
+test('Temporary File Directory', (done) => {
+    try {
+        const shell = new PowerShell({ tmp_dir: './temp/' });
+        shell.call(`Write-Output "Testing tmp_dir";`, 'string')
+            .subscribe(
+                res => {
+                    expect(res.success[0]).toMatch('Testing tmp_dir');
+                    done();
+                });
+    } finally {
+        shell.destroy();
+    }
+});
