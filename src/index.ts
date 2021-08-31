@@ -93,6 +93,7 @@ function write(stream: Writable, string: string) {
 
 interface PowerShellOptions {
     tmp_dir?: string
+    exe_path?: string
 }
 
 export class PowerShell {
@@ -119,7 +120,8 @@ export class PowerShell {
     private ready$ = new BehaviorSubject<boolean>(false);
     private queued$ = new Subject<QueuedCommand>();
 
-    private tmp_dir = '';
+    private tmp_dir: string = '';
+    private exe_path: string;
 
     constructor(private options?: PowerShellOptions) {
         if (!!options) this.setOptions(options);
@@ -131,11 +133,12 @@ export class PowerShell {
 
     setOptions(options: PowerShellOptions) {
         if (options.tmp_dir) this.tmp_dir = options.tmp_dir;
+        if (options.exe_path) this.exe_path = options.exe_path;
     }
 
     private initPowerShell() {
         const args = ['-NoLogo', '-NoExit', '-Command', '-'];
-        const exe = os.platform() === 'win32' ? 'powershell' : 'pwsh';
+        const exe = this.exe_path ?? (os.platform() === 'win32' ? 'powershell' : 'pwsh');
 
         this.powershell = spawn(exe, args, { stdio: 'pipe' });
 

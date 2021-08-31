@@ -154,3 +154,18 @@ test('Temporary File Directory', (done) => {
         shell.destroy();
     }
 });
+
+test('PowerShell Path', (done) => {
+    try {
+        // NOTE: this test will only run on a Windows instance with pwsh installed in the directory below.
+        const shell = new PowerShell({ exe_path: `${process.env.SystemRoot}\\system32\\WindowsPowerShell\\v1.0\\powershell.exe` });
+        shell.call(`Write-Output "Testing exe_path";`, 'string')
+            .subscribe(
+                res => {
+                    expect(res.success[0]).toMatch('Testing exe_path');
+                    done();
+                });
+    } finally {
+        shell.destroy();
+    }
+});
