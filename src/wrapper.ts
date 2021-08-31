@@ -33,6 +33,9 @@ export function wrap(command: string, delimit_head: string, delimit_tail: string
         $verbose = Get-Content $vv
         $debug = Get-Content $dv
 
+        Remove-Item $vv | Out-Null
+        Remove-Item $dv | Out-Null
+
         $rxjs_pwsh = [pscustomobject]@{ 
             result = [pscustomobject]@{ 
                 success = ${serialise('$ov', format)}

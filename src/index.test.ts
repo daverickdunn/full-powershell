@@ -1,17 +1,11 @@
 import { PowerShell } from './index';
 
-let shell = new PowerShell();
-
-afterAll((done) => {
-    shell.destroy();
-    done();
-});
-
 test('Success JSON', (done) => {
-    let sub = shell.success$.subscribe(
+    let shell = new PowerShell();
+     shell.success$.subscribe(
         (res) => {
             expect(res[0]).toHaveProperty('DateTime');
-            sub.unsubscribe();
+            shell.destroy();
             done();
         }
     );
@@ -19,10 +13,11 @@ test('Success JSON', (done) => {
 });
 
 test('Success String', (done) => {
-    let sub = shell.success$.subscribe(
+    let shell = new PowerShell();
+    shell.success$.subscribe(
         (res) => {
             expect(res[0]).toMatch('Testing Write-Output');
-            sub.unsubscribe();
+            shell.destroy();
             done();
         }
     );
@@ -30,10 +25,11 @@ test('Success String', (done) => {
 });
 
 test('Error', (done) => {
-    let sub = shell.error$.subscribe(
+    let shell = new PowerShell();
+    shell.error$.subscribe(
         (res) => {
             expect(res[0]).toEqual(expect.stringContaining('Testing Write-Error'));
-            sub.unsubscribe();
+            shell.destroy();
             done();
         }
     );
@@ -41,10 +37,11 @@ test('Error', (done) => {
 });
 
 test('Warning', (done) => {
-    let sub = shell.warning$.subscribe(
+    let shell = new PowerShell();
+    shell.warning$.subscribe(
         (res) => {
             expect(res[0]).toEqual(expect.stringContaining('Testing Write-Warning'));
-            sub.unsubscribe();
+            shell.destroy();
             done();
         }
     );
@@ -52,10 +49,11 @@ test('Warning', (done) => {
 });
 
 test('Verbose', (done) => {
-    let sub = shell.verbose$.subscribe(
+    let shell = new PowerShell();
+    shell.verbose$.subscribe(
         (res) => {
             expect(res[0]).toEqual(expect.stringContaining('Testing Write-Verbose'));
-            sub.unsubscribe();
+            shell.destroy();
             done();
         }
     );
@@ -63,10 +61,11 @@ test('Verbose', (done) => {
 });
 
 test('Debug', (done) => {
-    let sub = shell.debug$.subscribe(
+    let shell = new PowerShell();
+    shell.debug$.subscribe(
         (res) => {
             expect(res[0]).toEqual(expect.stringContaining('Testing Write-Debug'));
-            sub.unsubscribe();
+            shell.destroy();
             done();
         }
     );
@@ -74,10 +73,11 @@ test('Debug', (done) => {
 });
 
 test('Info', (done) => {
-    let sub = shell.info$.subscribe(
+    let shell = new PowerShell();
+    shell.info$.subscribe(
         (res) => {
             expect(res[0]).toEqual(expect.stringContaining('Testing Write-Information'));
-            sub.unsubscribe();
+            shell.destroy();
             done();
         }
     );
@@ -85,11 +85,12 @@ test('Info', (done) => {
 });
 
 test('Success Multi JSON', (done) => {
-    let sub = shell.success$.subscribe(
+    let shell = new PowerShell();
+    shell.success$.subscribe(
         (res) => {
             expect(res[0]).toHaveProperty('DateTime');
             expect(res[1]).toHaveProperty('DateTime');
-            sub.unsubscribe();
+            shell.destroy();
             done();
         }
     );
@@ -97,11 +98,12 @@ test('Success Multi JSON', (done) => {
 });
 
 test('Success Multi String', (done) => {
-    let sub = shell.success$.subscribe(
+    let shell = new PowerShell();
+    shell.success$.subscribe(
         (res) => {
             expect(res[0]).toMatch('This is a test string');
             expect(res[1]).toMatch('This is another test string');
-            sub.unsubscribe();
+            shell.destroy();
             done();
         }
     );
@@ -109,27 +111,30 @@ test('Success Multi String', (done) => {
 });
 
 test('Call Structure', (done) => {
-    let sub = shell.call(`Write-Output "This is a test string";`, 'string')
+    let shell = new PowerShell();
+    shell.call(`Write-Output "This is a test string";`, 'string')
         .subscribe(res => {
             expect(res).toHaveProperty('success');
             expect(res).toHaveProperty('error');
             expect(res).toHaveProperty('warning');
             expect(res).toHaveProperty('info');
-            sub.unsubscribe();
+            shell.destroy();
             done();
         })
 });
 
 test('Variable Scope', (done) => {
+    let shell = new PowerShell();
     shell.call(`$XYZ = 'something';`);
-    let sub = shell.call(`Write-Output $XYZ;`).subscribe(res => {
+    shell.call(`Write-Output $XYZ;`).subscribe(res => {
         expect(res.success).toContain('something');
-        sub.unsubscribe();
+        shell.destroy();
         done();
     })
 });
 
 test('Promises', (done) => {
+    let shell = new PowerShell();
     shell.call(`Write-Output "Testing Promises";`, 'string').promise()
         .then(res => {
             expect(res.success[0]).toMatch('Testing Promises');
@@ -137,35 +142,30 @@ test('Promises', (done) => {
         })
         .then(res => {
             expect(res.success[0]).toMatch('Testing More Promises');
+            shell.destroy();
             done();
         })
 });
 
 test('Temporary File Directory', (done) => {
-    try {
-        const shell = new PowerShell({ tmp_dir: './temp/' });
-        shell.call(`Write-Output "Testing tmp_dir";`, 'string')
-            .subscribe(
-                res => {
-                    expect(res.success[0]).toMatch('Testing tmp_dir');
-                    done();
-                });
-    } finally {
-        shell.destroy();
-    }
+    const shell = new PowerShell({ tmp_dir: './temp/' });
+    shell.call(`Write-Output "Testing tmp_dir";`, 'string')
+        .subscribe(
+            res => {
+                expect(res.success[0]).toMatch('Testing tmp_dir');
+                shell.destroy();
+                done();
+            });
 });
 
 test('PowerShell Path', (done) => {
-    try {
-        // NOTE: this test will only run on a Windows instance with pwsh installed in the directory below.
-        const shell = new PowerShell({ exe_path: `${process.env.SystemRoot}\\system32\\WindowsPowerShell\\v1.0\\powershell.exe` });
-        shell.call(`Write-Output "Testing exe_path";`, 'string')
-            .subscribe(
-                res => {
-                    expect(res.success[0]).toMatch('Testing exe_path');
-                    done();
-                });
-    } finally {
-        shell.destroy();
-    }
+    // NOTE: this test will only run on a Windows instance with pwsh installed in the directory below.
+    const shell = new PowerShell({ exe_path: `${process.env.SystemRoot}\\system32\\WindowsPowerShell\\v1.0\\powershell.exe` });
+    shell.call(`Write-Output "Testing exe_path";`, 'string')
+        .subscribe(
+            res => {
+                expect(res.success[0]).toMatch('Testing exe_path');
+                shell.destroy();
+                done();
+            });
 });

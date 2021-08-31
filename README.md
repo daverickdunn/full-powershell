@@ -16,7 +16,7 @@ Spawns a PowerShell child process and exposes methods to read/write to/from that
 class PowerShell {
     constructor(private options?: PowerShellOptions);
     success$: Subject<any[]>();
-    error$: Subject<any[]>>();
+    error$: Subject<any[]>();
     warning$: Subject<any[]>();
     verbose$: Subject<any[]>();
     debug$: Subject<any[]>();
@@ -47,10 +47,13 @@ Optional configuration options for the `PowerShell` class.
 ```typescript
 interface PowerShellOptions {
     tmp_dir?: string
+    exe_path?: string
 }
 ```
 
 - `tmp_dir` - Change the path for ephemeral '.tmp' files. Must have a trailing slash. (Must be set to `/tmp/` when executing on AWS Lambda)
+
+- `exe_path` - Explicitly set the path to the PowerShell executable.
 
 # Semantics
 The subjects provided by the `PowerShell` class, as well as the singleton observable returned by `PowerShell.call` all return arrays of either strings or parsed JSON. It's important to note that these arrays reflect the output for each _PowerShell command_ contained in the single string passed to `PowerShell.call`. So for example, if you were to call `PowerShell.call('Get-Date; Get-Date;')`, you should expect to receive an Array containing two items in the next emission. However, there are exceptions to this - **debug** and **verbose** are *newline* delimited due to limitations of PowerShell redirection. While they will generally equate to one string per `Write-Debug` or `Write-Verbose`, it is up to you to ensure output has not been broken into multiple lines.
@@ -72,7 +75,7 @@ const PowerShell = require('full-powershell');
 const shell = new PowerShell();
 ```
 
-## Calling:
+## Calling PowerShell:
 
 Pipe result object to `ConvertTo-Json` before returning:
 ```typescript
