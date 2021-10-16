@@ -1,17 +1,17 @@
 import { ChildProcessWithoutNullStreams, spawn } from 'child_process';
+import { debug } from 'debug';
 import os from 'os';
-import { BehaviorSubject, combineLatest, firstValueFrom, Observable, Subject } from 'rxjs';
-import { finalize, map, take } from 'rxjs/operators';
+import { firstValueFrom, Observable, Subject } from 'rxjs';
+import { concatMap, map, take, tap } from 'rxjs/operators';
 import { Readable, Writable } from 'stream';
 import { Format, wrap } from './wrapper';
-import { debug } from 'debug';
 
 const log = {
     info: debug('fps:info'),
     error: debug('fps:error')
 }
 
-interface QueuedCommand {
+interface Command {
     command: string;
     wrapped: string;
     subject: Subject<PowerShellStreams>;
@@ -80,17 +80,6 @@ class BufferReader extends Writable {
     }
 }
 
-function write(stream: Writable, string: string) {
-    return new Observable((sub) => {
-        let success = stream.write(Buffer.from(string));
-        if (success) {
-            sub.complete();
-        } else {
-            stream.once('drain', () => sub.complete());
-        }
-    });
-}
-
 interface PowerShellOptions {
     tmp_dir?: string
     exe_path?: string
@@ -112,23 +101,19 @@ export class PowerShell {
     private read_out: BufferReader;
     private read_err: BufferReader;
 
-    private delimit_head = 'F0ZU7Wm1p4';
-    private delimit_tail = 'AdBmCXEdsB';
+    private delimit_head = 'F0ZU7Wm1p4'; // random string
+    private delimit_tail = 'AdBmCXEdsB'; // random string
 
-    private queue: Array<QueuedCommand> = [];
-
-    private ready$ = new BehaviorSubject<boolean>(false);
-    private queued$ = new Subject<QueuedCommand>();
+    private command_queue$ = new Subject<Command>();
 
     private tmp_dir: string = '';
-    private exe_path: string;
+    private exe_path: string = (os.platform() === 'win32' ? 'powershell' : 'pwsh');
 
-    constructor(private options?: PowerShellOptions) {
+    constructor(options?: PowerShellOptions) {
         if (!!options) this.setOptions(options);
         this.initPowerShell();
         this.initReaders();
         this.initQueue();
-        this.ready$.next(true);
     }
 
     setOptions(options: PowerShellOptions) {
@@ -138,9 +123,8 @@ export class PowerShell {
 
     private initPowerShell() {
         const args = ['-NoLogo', '-NoExit', '-Command', '-'];
-        const exe = this.exe_path ?? (os.platform() === 'win32' ? 'powershell' : 'pwsh');
 
-        this.powershell = spawn(exe, args, { stdio: 'pipe' });
+        this.powershell = spawn(this.exe_path, args, { stdio: 'pipe' });
 
         if (!this.powershell.pid) {
             throw new Error('could not start child process');
@@ -165,33 +149,29 @@ export class PowerShell {
         this.stdout.pipe(this.read_out);
         this.stderr.pipe(this.read_err);
         this.read_err.subject.subscribe((res) => {
+            log.error('read_err: %O', res)
             this.error$.next([res]);
         });
     }
 
     private initQueue() {
-        combineLatest([this.queued$, this.ready$])
-            .subscribe(([_, ready]) => {
-                if (ready && this.queue.length > 0) {
-                    let next = this.queue.shift() as QueuedCommand;
-                    log.info('Running: %O', next.command)
-                    this._call(next.wrapped).subscribe(
-                        (res) => {
-                            next.subject.next(res);
-                            next.subject.complete();
-                        },
-                        (err) => {
-                            next.subject.error(err);
-                        }
-                    );
-                }
+        this.command_queue$
+            .pipe(
+                tap(command => log.info('invoking command: %O', command.command)),
+                concatMap(command => this._call(command.wrapped).pipe(
+                    map(result => ({ ...command, result }))
+                )),
+                tap(command => log.info('command complete: %O', command.command)),
+            )
+            .subscribe(res => {
+                res.subject.next(res.result);
+                res.subject.complete();
             });
     }
 
     private _call(wrapped: string): Observable<PowerShellStreams> {
-        this.ready$.next(false);
 
-        write(this.stdin, wrapped).subscribe();
+        this.stdin.write(Buffer.from(wrapped)); // send command to powershell
 
         return this.read_out.subject.pipe(
             take(1),
@@ -221,13 +201,16 @@ export class PowerShell {
                 };
 
                 return streams;
-            }),
-            finalize(() => this.ready$.next(true))
+            })
         );
     }
 
     public call(command: string, format: Format = 'json') {
+
+        log.info('received command: %O', command)
+
         const subject = new SubjectWithPromise<PowerShellStreams>();
+
         const wrapped = wrap(
             command,
             this.delimit_head,
@@ -235,13 +218,15 @@ export class PowerShell {
             format,
             this.tmp_dir
         );
-        const queued: QueuedCommand = {
+
+        const queued: Command = {
             command: command,
             wrapped: wrapped,
             subject: subject,
         }
-        this.queue.push(queued);
-        this.queued$.next(queued);
+
+        this.command_queue$.next(queued);
+
         return subject;
     }
 

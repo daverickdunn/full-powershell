@@ -1,8 +1,9 @@
+import { bufferCount } from 'rxjs';
 import { PowerShell } from './index';
 
 test('Success JSON', (done) => {
     let shell = new PowerShell();
-     shell.success$.subscribe(
+    shell.success$.subscribe(
         (res) => {
             expect(res[0]).toHaveProperty('DateTime');
             shell.destroy();
@@ -159,8 +160,8 @@ test('Temporary File Directory', (done) => {
 });
 
 test('PowerShell Path', (done) => {
-    // NOTE: this test will only run on a Windows instance with pwsh installed in the directory below.
-    const shell = new PowerShell({ exe_path: `${process.env.SystemRoot}\\system32\\WindowsPowerShell\\v1.0\\powershell.exe` });
+    // NOTE: this test will only run on a Windows instance with PowerShell 7 installed in the directory below.
+    const shell = new PowerShell({ exe_path: 'C:\\Program Files\\PowerShell\\7\\pwsh.exe' });
     shell.call(`Write-Output "Testing exe_path";`, 'string')
         .subscribe(
             res => {
@@ -168,4 +169,47 @@ test('PowerShell Path', (done) => {
                 shell.destroy();
                 done();
             });
+});
+
+test('Concurrent Calls', (done) => {
+
+    let shell = new PowerShell();
+
+    shell.success$.pipe(
+        bufferCount(4)
+    )
+        .subscribe(
+            (res) => {
+                expect(res[0][0]).toMatch('Call 1');
+                expect(res[1][0]).toMatch('Call 2');
+                expect(res[2][0]).toMatch('Call 3');
+                expect(res[3][0]).toMatch('Call 4');
+                shell.destroy();
+                done();
+            }
+        );
+
+    shell.call(`Start-Sleep -m 300; Write-Output "Call 1";`, 'string');
+    shell.call(`Start-Sleep -m 200; Write-Output "Call 2";`, 'string');
+    shell.call(`Start-Sleep -m 100; Write-Output "Call 3";`, 'string');
+    shell.call(`Start-Sleep -m 400; Write-Output "Call 4";`, 'string');
+
+});
+
+test('Throwing PowerShell Error', (done) => {
+    let shell = new PowerShell();
+    shell.error$.subscribe(
+        (res) => {
+            expect(res[0]).toEqual(expect.stringContaining('Some Error!'));
+        }
+    );
+    shell.success$.subscribe(
+        (res) => {
+            expect(res[0]).toEqual(expect.stringContaining('Still running!'));
+            shell.destroy();
+            done();
+        }
+    );
+    shell.call(`throw "Some Error!"`);
+    shell.call(`Write-Output "Still running!"`);
 });
