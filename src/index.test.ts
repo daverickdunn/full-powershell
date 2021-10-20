@@ -1,4 +1,4 @@
-import { bufferCount } from 'rxjs';
+import { bufferCount, catchError, of, throwError } from 'rxjs';
 import { PowerShell } from './index';
 
 test('Success JSON', (done) => {
@@ -23,6 +23,18 @@ test('Success String', (done) => {
         }
     );
     shell.call(`Write-Output "Testing Write-Output";`, 'string');
+});
+
+test('Success Default toString', (done) => {
+    let shell = new PowerShell();
+    shell.success$.subscribe(
+        (res) => {
+            expect(res[0]).toMatch('Testing Write-Output');
+            shell.destroy();
+            done();
+        }
+    );
+    shell.call(`Write-Output "Testing Write-Output";`, null);
 });
 
 test('Error', (done) => {
@@ -212,4 +224,18 @@ test('Throwing PowerShell Error', (done) => {
     );
     shell.call(`throw "Some Error!"`);
     shell.call(`Write-Output "Still running!"`);
+});
+
+test('Child Process Closed Itself', (done) => {
+
+    let shell = new PowerShell();
+    shell.call(`Stop-Process -Id $PID;`)
+        .subscribe({
+            error: err => {
+                expect(err.message).toBe('child process closed itself');
+                shell.destroy();
+                done()
+            }
+        })
+
 });

@@ -2,7 +2,7 @@ import { ChildProcessWithoutNullStreams, spawn } from 'child_process';
 import { debug } from 'debug';
 import os from 'os';
 import { firstValueFrom, Observable, Subject } from 'rxjs';
-import { concatMap, map, take, tap } from 'rxjs/operators';
+import { concatMap, finalize, map, take, tap } from 'rxjs/operators';
 import { Readable, Writable } from 'stream';
 import { Format, wrap } from './wrapper';
 
@@ -107,6 +107,7 @@ export class PowerShell {
     private command_queue$ = new Subject<Command>();
 
     private tmp_dir: string = '';
+    /* istanbul ignore next */
     private exe_path: string = (os.platform() === 'win32' ? 'powershell' : 'pwsh');
 
     constructor(options?: PowerShellOptions) {
@@ -126,12 +127,11 @@ export class PowerShell {
 
         this.powershell = spawn(this.exe_path, args, { stdio: 'pipe' });
 
-        if (!this.powershell.pid) {
-            throw new Error('could not start child process');
-        }
-
-        this.powershell.once('error', () => {
-            throw new Error('child process threw an error');
+        this.powershell.on('exit', () => {
+            if (!this.powershell.killed) {
+                log.info('child process closed itself');
+                this.command_queue$.error(new Error('child process closed itself'))
+            }
         });
 
         this.powershell.stdin.setDefaultEncoding('utf8');
@@ -148,9 +148,10 @@ export class PowerShell {
         this.read_err = new BufferReader(this.delimit_head, this.delimit_tail);
         this.stdout.pipe(this.read_out);
         this.stderr.pipe(this.read_err);
+
         this.read_err.subject.subscribe((res) => {
-            log.error('read_err: %O', res)
-            this.error$.next([res]);
+            // TODO: test this branch
+            log.info('child process wrote to stderr');
         });
     }
 
@@ -159,13 +160,15 @@ export class PowerShell {
             .pipe(
                 tap(command => log.info('invoking command: %O', command.command)),
                 concatMap(command => this._call(command.wrapped).pipe(
-                    map(result => ({ ...command, result }))
+                    map(result => ({ ...command, result })),
                 )),
                 tap(command => log.info('command complete: %O', command.command)),
             )
-            .subscribe(res => {
-                res.subject.next(res.result);
-                res.subject.complete();
+            .subscribe({
+                next: res => {
+                    res.subject.next(res.result);
+                    res.subject.complete();
+                }
             });
     }
 
@@ -210,6 +213,10 @@ export class PowerShell {
         log.info('received command: %O', command)
 
         const subject = new SubjectWithPromise<PowerShellStreams>();
+
+        // if command_queue$ errors, error this call's sub as well
+        const err$ = this.command_queue$.subscribe({ error: err => subject.error(err) });
+        subject.pipe(finalize(() => err$.unsubscribe())).subscribe(); // cleanup
 
         const wrapped = wrap(
             command,

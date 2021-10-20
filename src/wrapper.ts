@@ -8,9 +8,8 @@ function serialise(variable: string, format: Format) {
     }
     if (format === 'string') {
         return `ConvertTo-Json -InputObject @(${variable} | ForEach-Object { Out-String -InputObject $_ }) -Compress`;
-    } else {
-        return `${variable}`
     }
+    return `@(${variable})`;
 }
 
 export function wrap(command: string, delimit_head: string, delimit_tail: string, format: Format, tmp_dir: string) {
@@ -44,7 +43,7 @@ export function wrap(command: string, delimit_head: string, delimit_tail: string
                 verbose = ${serialise('$verbose', 'string')}
                 debug = ${serialise('$debug', 'string')}
                 info = ${serialise('$iv', 'string')}
-                format = "${format}"
+                format = ${format ? `"${format}"` : "$null"}
             }
         }
         $rxjs_pwsh_json = $rxjs_pwsh | ConvertTo-Json -Depth 2
