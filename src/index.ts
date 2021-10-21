@@ -1,8 +1,8 @@
 import { ChildProcessWithoutNullStreams, spawn } from 'child_process';
 import { debug } from 'debug';
 import os from 'os';
-import { firstValueFrom, Observable, Subject } from 'rxjs';
-import { concatMap, finalize, map, take, tap } from 'rxjs/operators';
+import { BehaviorSubject, firstValueFrom, Observable, Subject } from 'rxjs';
+import { catchError, concatMap, filter, map, share, take, tap, timeout } from 'rxjs/operators';
 import { Readable, Writable } from 'stream';
 import { Format, wrap } from './wrapper';
 
@@ -15,6 +15,7 @@ interface Command {
     command: string;
     wrapped: string;
     subject: Subject<PowerShellStreams>;
+    pid: number
 }
 
 interface RawStreams {
@@ -83,6 +84,7 @@ class BufferReader extends Writable {
 interface PowerShellOptions {
     tmp_dir?: string
     exe_path?: string
+    timeout?: number // milliseconds
 }
 
 export class PowerShell {
@@ -98,17 +100,19 @@ export class PowerShell {
     private stdout: Readable;
     private stderr: Readable;
 
-    private read_out: BufferReader;
-    private read_err: BufferReader;
+    private out$: Observable<PowerShellStreams>;
+    // private err$: Subject<any> = new Subject();
 
     private delimit_head = 'F0ZU7Wm1p4'; // random string
     private delimit_tail = 'AdBmCXEdsB'; // random string
 
-    private command_queue$ = new Subject<Command>();
-
+    private queue: Command[] = [];
+    private tick$ = new Subject<void>();
+    
     private tmp_dir: string = '';
     /* istanbul ignore next */
     private exe_path: string = (os.platform() === 'win32' ? 'powershell' : 'pwsh');
+    private timeout = 600000; // 10 minutes
 
     constructor(options?: PowerShellOptions) {
         if (!!options) this.setOptions(options);
@@ -120,6 +124,7 @@ export class PowerShell {
     setOptions(options: PowerShellOptions) {
         if (options.tmp_dir) this.tmp_dir = options.tmp_dir;
         if (options.exe_path) this.exe_path = options.exe_path;
+        if (options.timeout) this.timeout = options.timeout;
     }
 
     private initPowerShell() {
@@ -127,12 +132,18 @@ export class PowerShell {
 
         this.powershell = spawn(this.exe_path, args, { stdio: 'pipe' });
 
+        log.info('[new shell] PID: %s', this.powershell.pid);
+
         this.powershell.on('exit', () => {
             if (!this.powershell.killed) {
                 log.info('child process closed itself');
-                this.command_queue$.error(new Error('child process closed itself'))
+                // this.err$.next(new Error('child process closed itself'))
             }
         });
+
+        // this.powershell.on('close', () => console.log('[fps] close'));
+        // this.powershell.on('data', () => console.log('[fps] data'));
+        // this.powershell.on('error', () => console.log('[fps] error'));
 
         this.powershell.stdin.setDefaultEncoding('utf8');
         this.powershell.stdout.setEncoding('utf8');
@@ -144,40 +155,12 @@ export class PowerShell {
     }
 
     private initReaders() {
-        this.read_out = new BufferReader(this.delimit_head, this.delimit_tail);
-        this.read_err = new BufferReader(this.delimit_head, this.delimit_tail);
-        this.stdout.pipe(this.read_out);
-        this.stderr.pipe(this.read_err);
+        const read_out = new BufferReader(this.delimit_head, this.delimit_tail);
+        const read_err = new BufferReader(this.delimit_head, this.delimit_tail);
+        this.stdout.pipe(read_out);
+        this.stderr.pipe(read_err);
 
-        this.read_err.subject.subscribe((res) => {
-            // TODO: test this branch
-            log.info('child process wrote to stderr');
-        });
-    }
-
-    private initQueue() {
-        this.command_queue$
-            .pipe(
-                tap(command => log.info('invoking command: %O', command.command)),
-                concatMap(command => this._call(command.wrapped).pipe(
-                    map(result => ({ ...command, result })),
-                )),
-                tap(command => log.info('command complete: %O', command.command)),
-            )
-            .subscribe({
-                next: res => {
-                    res.subject.next(res.result);
-                    res.subject.complete();
-                }
-            });
-    }
-
-    private _call(wrapped: string): Observable<PowerShellStreams> {
-
-        this.stdin.write(Buffer.from(wrapped)); // send command to powershell
-
-        return this.read_out.subject.pipe(
-            take(1),
+        this.out$ = read_out.subject.pipe(
             map((res: string) => {
                 let result = JSON.parse(res).result as RawStreams;
                 let success = parseStream(result.success, result.format);
@@ -194,7 +177,7 @@ export class PowerShell {
                 if (debug.length > 0) this.debug$.next(debug);
                 if (info.length > 0) this.info$.next(info);
 
-                let streams: PowerShellStreams = {
+                return {
                     success,
                     error,
                     warning,
@@ -202,21 +185,90 @@ export class PowerShell {
                     debug,
                     info,
                 };
-
-                return streams;
-            })
+            }),
+            share() // prevents duplicate calls
         );
+
+        // read_err.subject.pipe(
+        //     tap(() => log.info('child process wrote to stderr')),
+        //     share() // prevents duplicate calls
+        // )
+        // .subscribe(res => this.err$.next(res))
+    }
+
+    private reset() {
+        this.powershell.kill();
+        this.initPowerShell();
+        this.initReaders();
+        this.initQueue();
+    }
+
+    private initQueue() {
+
+        let ready = false;
+
+        const sub = this.tick$
+            .pipe(
+                tap(() => log.info('[tick] queued: %s ready: %s', this.queue.length, ready)),
+                filter(() => ready), // if ready
+                map(() => this.queue.shift()), // next command
+                filter(Boolean), // if there was a command
+                tap((c) => log.info('[shifted]', c.command)),
+                tap(() => ready = false),
+                concatMap(command => {
+
+                    if (this.powershell.pid !== command.pid) {
+                        const err = new Error(`pid has changed since command was queued. was: ${command.pid} now: ${this.powershell.pid}`);
+                        log.info(err.message);
+                        sub.unsubscribe();
+                        this.reset();
+                        command.subject.error(err);
+                        throw err
+                    }
+
+                    // this.err$.subscribe(err => {
+                    //     log.info(err.message);
+                    //     sub.unsubscribe();
+                    //     this.reset();
+                    //     command.subject.error(err);
+                    // })
+
+                    log.info('[executing] %s', command.command)
+                    this.stdin.write(Buffer.from(command.wrapped));
+                    return this.out$.pipe(
+                        take(1),
+                        timeout(this.timeout),
+                        catchError(err => {
+                            sub.unsubscribe();
+                            this.reset();
+                            command.subject.error(err);
+                            throw err
+                        }),
+                        tap(res => {
+                            log.info('[complete]', command.command)
+                            command.subject.next(res);
+                            command.subject.complete();
+                            ready = true;
+                            this.tick$.next();
+                        }),
+                    );
+                })
+            ).subscribe({
+                error: err => {
+                    log.error('at queue %O', err)
+                    this.reset();
+                }
+            })
+
+        log.info('[init queue] %s pending', this.queue.length)
+        ready = true;
+        this.tick$.next();
+
     }
 
     public call(command: string, format: Format = 'json') {
 
-        log.info('received command: %O', command)
-
         const subject = new SubjectWithPromise<PowerShellStreams>();
-
-        // if command_queue$ errors, error this call's sub as well
-        const err$ = this.command_queue$.subscribe({ error: err => subject.error(err) });
-        subject.pipe(finalize(() => err$.unsubscribe())).subscribe(); // cleanup
 
         const wrapped = wrap(
             command,
@@ -226,13 +278,16 @@ export class PowerShell {
             this.tmp_dir
         );
 
-        const queued: Command = {
+        this.queue.push({
             command: command,
             wrapped: wrapped,
             subject: subject,
-        }
+            pid: this.powershell.pid || 0
+        })
 
-        this.command_queue$.next(queued);
+        log.info('[received] %O PID: %s', command, this.powershell.pid)
+
+        this.tick$.next();
 
         return subject;
     }

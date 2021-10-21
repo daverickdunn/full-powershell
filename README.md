@@ -48,12 +48,15 @@ Optional configuration options for the `PowerShell` class.
 interface PowerShellOptions {
     tmp_dir?: string
     exe_path?: string
+    timeout?: number
 }
 ```
 
 - `tmp_dir` - Change the path for ephemeral '.tmp' files. Must have a trailing slash. (Must be set to `/tmp/` when executing on AWS Lambda)
 
 - `exe_path` - Explicitly set the path to the PowerShell executable.
+
+- `timeout` - _Default: 10 minutes_. Set number of milliseconds before each call to this shell will timeout. **Warning:** A timeout will result in the PowerShell child process being terminated and a new process created, any pending calls will be errored and PowerShell context will be lost.
 
 # Semantics
 The subjects provided by the `PowerShell` class, as well as the singleton observable returned by `PowerShell.call` all return arrays of either strings or parsed JSON. It's important to note that these arrays reflect the output for each _PowerShell command_ contained in the single string passed to `PowerShell.call`. So for example, if you were to call `PowerShell.call('Get-Date; Get-Date;')`, you should expect to receive an Array containing two items in the next emission. However, there are exceptions to this - **debug** and **verbose** are *newline* delimited due to limitations of PowerShell redirection. While they will generally equate to one string per `Write-Debug` or `Write-Verbose`, it is up to you to ensure output has not been broken into multiple lines.
