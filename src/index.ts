@@ -1,7 +1,7 @@
 import { ChildProcessWithoutNullStreams, spawn } from 'child_process';
 import { debug } from 'debug';
 import os from 'os';
-import { BehaviorSubject, firstValueFrom, Observable, Subject } from 'rxjs';
+import { firstValueFrom, Observable, Subject } from 'rxjs';
 import { catchError, concatMap, filter, map, share, take, tap, timeout } from 'rxjs/operators';
 import { Readable, Writable } from 'stream';
 import { Format, wrap } from './wrapper';
@@ -108,15 +108,22 @@ export class PowerShell {
 
     private queue: Command[] = [];
     private tick$ = new Subject<void>();
-    
+
     private tmp_dir: string = '';
     /* istanbul ignore next */
     private exe_path: string = (os.platform() === 'win32' ? 'powershell' : 'pwsh');
     private timeout = 600000; // 10 minutes
 
     constructor(options?: PowerShellOptions) {
+
         if (!!options) this.setOptions(options);
-        this.initPowerShell();
+
+        log.info('[>] new instance');
+        log.info('[>] tmp_dir: %s', this.tmp_dir);
+        log.info('[>] exe_path: %s', this.exe_path);
+        log.info('[>] timeout: %s', this.timeout);
+
+        this.spawnChildProcess();
         this.initReaders();
         this.initQueue();
     }
@@ -127,17 +134,19 @@ export class PowerShell {
         if (options.timeout) this.timeout = options.timeout;
     }
 
-    private initPowerShell() {
+    private spawnChildProcess() {
+
+        log.info('[>] spawn child process');
+
         const args = ['-NoLogo', '-NoExit', '-Command', '-'];
 
         this.powershell = spawn(this.exe_path, args, { stdio: 'pipe' });
 
-        log.info('[new shell] PID: %s', this.powershell.pid);
+        log.info('[>] pid: %s', this.powershell.pid);
 
         this.powershell.on('exit', () => {
             if (!this.powershell.killed) {
-                log.info('child process closed itself');
-                // this.err$.next(new Error('child process closed itself'))
+                log.info('[>] child process closed itself');
             }
         });
 
@@ -155,6 +164,9 @@ export class PowerShell {
     }
 
     private initReaders() {
+
+        log.info('[>] init readers');
+
         const read_out = new BufferReader(this.delimit_head, this.delimit_tail);
         const read_err = new BufferReader(this.delimit_head, this.delimit_tail);
         this.stdout.pipe(read_out);
@@ -189,37 +201,35 @@ export class PowerShell {
             share() // prevents duplicate calls
         );
 
-        // read_err.subject.pipe(
-        //     tap(() => log.info('child process wrote to stderr')),
-        //     share() // prevents duplicate calls
-        // )
-        // .subscribe(res => this.err$.next(res))
     }
 
     private reset() {
+        log.info('[>] reset');
         this.powershell.kill();
-        this.initPowerShell();
+        this.spawnChildProcess();
         this.initReaders();
         this.initQueue();
     }
 
     private initQueue() {
 
+        log.info('[>] init queue');
+
         let ready = false;
 
         const sub = this.tick$
             .pipe(
-                tap(() => log.info('[tick] queued: %s ready: %s', this.queue.length, ready)),
+                tap(() => log.info('[>] tick queued: %s ready: %s', this.queue.length, ready)),
                 filter(() => ready), // if ready
                 map(() => this.queue.shift()), // next command
                 filter(Boolean), // if there was a command
-                tap((c) => log.info('[shifted]', c.command)),
+                tap((c) => log.info('[>] shifted', c.command)),
                 tap(() => ready = false),
                 concatMap(command => {
 
                     if (this.powershell.pid !== command.pid) {
                         const err = new Error(`pid has changed since command was queued. was: ${command.pid} now: ${this.powershell.pid}`);
-                        log.info(err.message);
+                        log.error(err.message);
                         sub.unsubscribe();
                         this.reset();
                         command.subject.error(err);
@@ -233,19 +243,21 @@ export class PowerShell {
                     //     command.subject.error(err);
                     // })
 
-                    log.info('[executing] %s', command.command)
+                    log.info('[>] executing: %s', command.command)
                     this.stdin.write(Buffer.from(command.wrapped));
+
                     return this.out$.pipe(
                         take(1),
                         timeout(this.timeout),
                         catchError(err => {
+                            log.error('[X] error in pipe: %O', err)
                             sub.unsubscribe();
                             this.reset();
                             command.subject.error(err);
                             throw err
                         }),
                         tap(res => {
-                            log.info('[complete]', command.command)
+                            log.info('[>] complete: %s', command.command)
                             command.subject.next(res);
                             command.subject.complete();
                             ready = true;
@@ -253,20 +265,25 @@ export class PowerShell {
                         }),
                     );
                 })
-            ).subscribe({
+            )
+            .subscribe({
                 error: err => {
-                    log.error('at queue %O', err)
+                    log.error('[X] error at queue %O', err)
                     this.reset();
                 }
             })
 
-        log.info('[init queue] %s pending', this.queue.length)
+        log.info('[>] %s pending', this.queue.length)
         ready = true;
         this.tick$.next();
 
     }
 
     public call(command: string, format: Format = 'json') {
+
+        log.info('[>] command: %s', command)
+        log.info('[>] format: %s', format)
+        log.info('[>] pid: %s', this.powershell.pid)
 
         const subject = new SubjectWithPromise<PowerShellStreams>();
 
@@ -285,14 +302,13 @@ export class PowerShell {
             pid: this.powershell.pid || 0
         })
 
-        log.info('[received] %O PID: %s', command, this.powershell.pid)
-
         this.tick$.next();
 
         return subject;
     }
 
     public destroy() {
+        log.info('[>] destroy called')
         return this.powershell.kill();
     }
 }

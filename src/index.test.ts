@@ -1,4 +1,4 @@
-import { bufferCount, catchError, of, throwError } from 'rxjs';
+import { bufferCount } from 'rxjs';
 import { PowerShell } from './index';
 
 jest.setTimeout(10000)
