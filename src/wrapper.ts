@@ -26,7 +26,9 @@ export function wrap(command: string, delimit_head: string, delimit_tail: string
             ${command}
         } 1>$null 2>$null 3>$null 4>$vv 5>$dv 6>$null -ov ov -ev ev -wv wv -iv iv
     } 
-    catch { }
+    catch {
+        $ev = $_
+    }
     finally {
 
         $verbose = Get-Content $vv
