@@ -140,7 +140,7 @@ test('Call Structure', (done) => {
 
 test('Variable Scope', (done) => {
     let shell = new PowerShell();
-    shell.call(`$XYZ = 'something';`);
+    shell.call(`$XYZ = 'something'; Write-Output $XYZ;`);
     shell.call(`Write-Output $XYZ;`).subscribe(res => {
         expect(res.success).toContain('something');
         shell.destroy();
@@ -212,36 +212,28 @@ test('Concurrent Calls', (done) => {
 
 test('Command Timeout', (done) => {
 
-    // there are, in effect, 3 stages to this test
-
+    // note the 1 second timeout
     let shell = new PowerShell({
-        timeout: 2000
+        timeout: 1000
     });
 
-    // 1: should cause the shell to be destroyed
-    shell.call(`Start-Sleep -Seconds 3;`)
+    // timeout should cause this call to error
+    shell.call(`Start-Sleep -Seconds 2;`)
         .subscribe({
             error: err => {
-                expect(err.message).toBe('Timeout has occurred');
+                expect(err.message).toContain('Command timed out');
             }
         })
 
-    // 2: should error because shell was destroyed
+    // shell should recover and execute this call from a new process
     shell.call('Write-Output "Concurrent Call";')
         .subscribe({
-            error: err => {
-                // 3: should succeed because new shell was created
-                shell.call('Write-Output "Call After Reset";')
-                    .subscribe({
-                        next: res => {
-                            expect(res.success[0]).toMatch('Call After Reset');
-                            shell.destroy();
-                            done()
-                        }
-                    })
+            next: res => {
+                expect(res.success[0]).toMatch('Concurrent Call');
+                shell.destroy();
+                done()
             }
         })
-
 });
 
 test('Throwing PowerShell Error', (done) => {
@@ -261,17 +253,3 @@ test('Throwing PowerShell Error', (done) => {
     shell.call(`throw "Some Error!"`);
     shell.call(`Write-Output "Still running!"`);
 });
-
-// test('Child Process Closed Itself', (done) => {
-
-//     let shell = new PowerShell();
-//     shell.call(`Stop-Process -Id $PID;`)
-//         .subscribe({
-//             error: err => {
-//                 expect(err.message).toBe('child process closed itself');
-//                 shell.destroy();
-//                 done()
-//             }
-//         })
-
-// });

@@ -1,8 +1,8 @@
 import { ChildProcessWithoutNullStreams, spawn } from 'child_process';
 import { debug } from 'debug';
 import os from 'os';
-import { firstValueFrom, Observable, Subject } from 'rxjs';
-import { catchError, concatMap, filter, map, share, take, tap, timeout } from 'rxjs/operators';
+import { firstValueFrom, Observable, of, Subject } from 'rxjs';
+import { catchError, concatMap, filter, map, switchMap, take, tap, timeout } from 'rxjs/operators';
 import { Readable, Writable } from 'stream';
 import { Format, wrap } from './wrapper';
 
@@ -123,9 +123,7 @@ export class PowerShell {
         log.info('[>] exe_path: %s', this.exe_path);
         log.info('[>] timeout: %s', this.timeout);
 
-        this.spawnChildProcess();
-        this.initReaders();
-        this.initQueue();
+        this.init();
     }
 
     setOptions(options: PowerShellOptions) {
@@ -134,9 +132,16 @@ export class PowerShell {
         if (options.timeout) this.timeout = options.timeout;
     }
 
-    private spawnChildProcess() {
+    private init() {
+        log.info('[>] init');
+        this.initProcess();
+        this.initReaders();
+        this.initQueue();
+    }
 
-        log.info('[>] spawn child process');
+    private initProcess() {
+
+        log.info('[>] init process');
 
         const args = ['-NoLogo', '-NoExit', '-Command', '-'];
 
@@ -197,86 +202,69 @@ export class PowerShell {
                     debug,
                     info,
                 };
-            }),
-            share() // prevents duplicate calls
+            })
         );
 
-    }
-
-    private reset() {
-        log.info('[>] reset');
-        this.powershell.kill();
-        this.spawnChildProcess();
-        this.initReaders();
-        this.initQueue();
     }
 
     private initQueue() {
 
         log.info('[>] init queue');
 
-        let ready = false;
-
-        const sub = this.tick$
-            .pipe(
-                tap(() => log.info('[>] tick queued: %s ready: %s', this.queue.length, ready)),
-                filter(() => ready), // if ready
-                map(() => this.queue.shift()), // next command
-                filter(Boolean), // if there was a command
-                tap((c) => log.info('[>] shifted', c.command)),
-                tap(() => ready = false),
-                concatMap(command => {
-
-                    if (this.powershell.pid !== command.pid) {
-                        const err = new Error(`pid has changed since command was queued. was: ${command.pid} now: ${this.powershell.pid}`);
-                        log.error(err.message);
-                        sub.unsubscribe();
-                        this.reset();
-                        command.subject.error(err);
-                        throw err
+        // invokes a command
+        // enforces timeout
+        // errors calling subject
+        const invoke = (command: Command) => {
+            log.info('[>] invoking: %s', command.command)
+            this.stdin.write(Buffer.from(command.wrapped))
+            return this.out$.pipe(
+                take(1),
+                timeout(this.timeout),
+                map(result => ({ command, result })),
+                catchError(err => {
+                    log.error('[X] error in pipe: %O', err)
+                    let error = err;
+                    if (error.name === 'TimeoutError') {
+                        error = new Error(`Command timed out after ${this.timeout} milliseconds. Check the full-powershell docs for more information.`)
                     }
-
-                    // this.err$.subscribe(err => {
-                    //     log.info(err.message);
-                    //     sub.unsubscribe();
-                    //     this.reset();
-                    //     command.subject.error(err);
-                    // })
-
-                    log.info('[>] executing: %s', command.command)
-                    this.stdin.write(Buffer.from(command.wrapped));
-
-                    return this.out$.pipe(
-                        take(1),
-                        timeout(this.timeout),
-                        catchError(err => {
-                            log.error('[X] error in pipe: %O', err)
-                            sub.unsubscribe();
-                            this.reset();
-                            command.subject.error(err);
-                            throw err
-                        }),
-                        tap(res => {
-                            log.info('[>] complete: %s', command.command)
-                            command.subject.next(res);
-                            command.subject.complete();
-                            ready = true;
-                            this.tick$.next();
-                        }),
-                    );
+                    command.subject.error(error);
+                    throw error
                 })
-            )
+            );
+        }
+
+        // selects next command from queue
+        const handler = () => {
+            log.info('[>] %s pending', this.queue.length)
+            return of(this.queue.shift() as Command)
+                .pipe(
+                    filter(command => command !== undefined),
+                    switchMap(command => invoke(command as Command))
+                )
+        }
+
+        // subscribes to tick to trigger check for next command
+        // concatMaps command handler to enforce order
+        let sub = this.tick$.pipe(
+            tap(_ => log.info('[>] tick')),
+            concatMap(_ => handler())
+        )
             .subscribe({
+                next: ({ command, result }) => {
+                    log.info('[>] complete: %s', command.command)
+                    command.subject.next(result); // emit from subject returned by call()
+                    command.subject.complete(); // complete subject returned by call()
+                    this.tick$.next(); // check for next command in queue
+                },
                 error: err => {
-                    log.error('[X] error at queue %O', err)
-                    this.reset();
+                    log.info('[>] error.......... %O', err)
+                    sub.unsubscribe(); // clean up this observable chain
+                    this.destroy(); // kill old process
+                    this.init(); // start a new process
                 }
             })
 
-        log.info('[>] %s pending', this.queue.length)
-        ready = true;
         this.tick$.next();
-
     }
 
     public call(command: string, format: Format = 'json') {
@@ -285,9 +273,11 @@ export class PowerShell {
         log.info('[>] format: %s', format)
         log.info('[>] pid: %s', this.powershell.pid)
 
+        // subject to be returned form this method
         const subject = new SubjectWithPromise<PowerShellStreams>();
 
-        const wrapped = wrap(
+        // wrap the command in the serialisation script
+        const wrapped: string = wrap(
             command,
             this.delimit_head,
             this.delimit_tail,
@@ -295,6 +285,7 @@ export class PowerShell {
             this.tmp_dir
         );
 
+        // queue the command context
         this.queue.push({
             command: command,
             wrapped: wrapped,
@@ -302,9 +293,11 @@ export class PowerShell {
             pid: this.powershell.pid || 0
         })
 
-        this.tick$.next();
+        // attempt to execute the command after this function has returned the subject
+        queueMicrotask(() => this.tick$.next())
 
-        return subject;
+        // return the subject for this command
+        return subject
     }
 
     public destroy() {
