@@ -1,17 +1,19 @@
-# Full Powershell
-_Full Powershell_ cleanly serialises all [6 message streams](https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_redirection) at their source so that they can be deserilised into JavaScript, retaining all of their semantics and completely removing the need to write brittle parsing logic.
+![alt text](img/waves.svg)
 
-# Background
-PowerShell has 6 message streams in addition to **Stdout** and **Stderr**. Cramming these 6 streams through stdout, on top of direct output, removes the streams semantics. Additionally, parsing this mess is painful - unexpected warning or error messages make your application very brittle.
+# Full Powershell
+Capture, separate and serialise all [6 PowerShell message streams](https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_redirection) at their source.
 
 # How it works
-This library accepts PowerShell commands as strings. It then transparently wraps them in an `Invoke-Command` that captures and serilises their output. This means that all 6 message streams are captured and sorted at their source. Once sent back to Node.js they can be subscribed to as 6 separate RxJS streams. Or the individual call can be subscribed to, emitting all streams in a clearly defined format. I encourage users to take a look at [index.ts](https://github.com/daverickdunn/full-powershell/blob/master/src/index.ts) and [wrapper.ts](https://github.com/daverickdunn/full-powershell/blob/master/src/wrapper.ts) to see exactly how it works.
+PowerShell has 6 message streams in addition to **Stdout** and **Stderr**. Cramming these 6 streams all through stdout removes each stream's semantics and is a nightmare to parse. Unexpected and intermittent warning or error messages (very common when remoting!) will make your application very brittle. Full-PowerShell sorts these streams _before_ returning them, so output from one stream will not affect the other, so unexpected server messages won't break your program.
 
+This library accepts PowerShell commands as strings. It wraps those commands in an `Invoke-Command` block that pipes their output into individual streams. All 6 message streams are captured and sorted at their source, they are then serialised using PowerShell's standard `ConvertTo-JSON` function, sent back to the parent Node.js process, before finally being deserilaised as individual streams. They can be subscribed to as an RxJS Observable, or as a Promise. 
+
+The source code is fairly concise, take a look at [index.ts](https://github.com/daverickdunn/full-powershell/blob/master/src/index.ts) and [wrapper.ts](https://github.com/daverickdunn/full-powershell/blob/master/src/wrapper.ts) to see exactly how it works.
 
 # API
 
-## `PowerShell` class.
-Spawns a PowerShell child process and exposes methods to read/write to/from that process:
+## The `PowerShell` class.
+Spawns a PowerShell child process on instantiation and exposes methods to read/write to/from that process:
 ```typescript
 class PowerShell {
     constructor(private options?: PowerShellOptions);
@@ -21,16 +23,16 @@ class PowerShell {
     verbose$: Subject<any[]>();
     debug$: Subject<any[]>();
     info$: Subject<any[]>();
-    call(string: string, format: Format = 'json'): SubjectWithPromise<PowerShellStreams>;
+    call(command: string, format: Format = 'json'): SubjectWithPromise<PowerShellStreams>;
     destroy(): boolean;
 }
 ```
 
-_Note: `SubjectWithPromise` will only emit the first value returned by PowerShell, this could be a warning, error, etc. Use the streams postfixed with `$` to handle all output from PowerShell._
+_Note: The `SubjectWithPromise` object returned by `call()` will only emit the value returned by the command passed to `call()`. Use the streams postfixed with `$` to listen to output from all calls made to that `PowerShell` instance._
 
 
-## `PowerShellStreams` object.
-Emittied by the `<Observable|Promise>` returned from `.call().subscribe()` and `.call().promise()`, respectively.
+## The `PowerShellStreams` object.
+Emittied by the `<Observable|Promise>` returned from `.call().subscribe()` or `.call().promise()`.
 ```typescript
 interface PowerShellStreams {
     success: any[];
@@ -42,8 +44,24 @@ interface PowerShellStreams {
 }
 ```
 
-## `PowerShellOptions` object.
-Optional configuration options for the `PowerShell` class.
+The subjects exposed by the `PowerShell` class, as well as the singleton observable/promise returned by `PowerShell.call` all return arrays of strings or parsed JSON. It's important to note that these arrays reflect the output for **each** PowerShell command passed to `PowerShell.call`. For example, if you were to call `PowerShell.call('Get-Date; Get-Date;')`, you should expect to receive an Array containing two items in the next emission's success stream. However, there are exceptions to this - **debug** and **verbose** are *newline* delimited due to limitations of PowerShell redirection. While they will generally equate to one string per `Write-Debug` or `Write-Verbose`, it is up to you to ensure output has not been broken into multiple lines.
+
+## Importing:
+ES6
+```typescript
+import { PowerShell } from 'full-powershell';
+```
+CommonJS
+```javascript
+const { PowerShell } = require('full-powershell');
+```
+
+## Instantiating:
+```typescript
+const shell = new PowerShell();
+```
+
+Options:
 ```typescript
 interface PowerShellOptions {
     tmp_dir?: string
@@ -52,35 +70,36 @@ interface PowerShellOptions {
 }
 ```
 
-- `tmp_dir` - Change the path for ephemeral '.tmp' files. Must have a trailing slash. (Must be set to `/tmp/` when executing on AWS Lambda)
+- `tmp_dir` - _Default: current directory_ Change the path for ephemeral '.tmp' files. Must have a trailing slash. (Must be set to `/tmp/` when executing on AWS Lambda). 
 
-- `exe_path` - Explicitly set the path to the PowerShell executable.
+- `exe_path` - _Default: `powershell` for windows, `pwsh` for nix_ Explicitly set the path or command name for the PowerShell executable.
+    - example: `pwsh`
+    - example: `C:\\Program Files\\PowerShell\\7\\pwsh.exe`
 
 - `timeout` - _Default: 10 minutes_. Set number of milliseconds before each call to this shell will timeout. **Warning:** A timeout will result in the PowerShell child process being terminated and a new process created, any pending calls will be errored and PowerShell context will be lost.
 
-# Semantics
-The subjects provided by the `PowerShell` class, as well as the singleton observable returned by `PowerShell.call` all return arrays of either strings or parsed JSON. It's important to note that these arrays reflect the output for each _PowerShell command_ contained in the single string passed to `PowerShell.call`. So for example, if you were to call `PowerShell.call('Get-Date; Get-Date;')`, you should expect to receive an Array containing two items in the next emission. However, there are exceptions to this - **debug** and **verbose** are *newline* delimited due to limitations of PowerShell redirection. While they will generally equate to one string per `Write-Debug` or `Write-Verbose`, it is up to you to ensure output has not been broken into multiple lines.
-
-# Usage
-
-## Importing:
-ES6
+Example:
 ```typescript
-import { PowerShell } from 'full-powershell';
-```
-CommonJS
-```typescript
-const PowerShell = require('full-powershell');
+const options: PowerShellOptions = {
+    tmp_dir: '/tmp/'
+    exe_path: 'pwsh',
+    timeout: 60000
+}
+const shell = new PowerShell(options);
 ```
 
-## Instantiation:
+## Executing PowerShell Commands:
+
+The call function accepts a PowerShell command as a string, and a an optional format paramter. Use the format parameter to change how _Full Powershell_ will serialise the command output before returing it from PowerShell.
+
 ```typescript
-const shell = new PowerShell();
+type Format = 'string' | 'json' | null;
+shell.call(command: string, format: Format = 'json')
 ```
 
-## Calling PowerShell:
+### Examples:
 
-Pipe result object to `ConvertTo-Json` before returning:
+Pipe result object to `ConvertTo-Json` before returning (default):
 ```typescript
 shell.call('My-Command');
 ```
@@ -93,7 +112,7 @@ Return result object using default string output:
 shell.call('My-Command', null);
 ```
 
-## Subscribing to Observables:
+## Subscribing to PowerShell Streams:
 Subscribe directly to a call (observable will complete after first emission):
 ```typescript
 shell.call('My-Command')
@@ -128,7 +147,7 @@ shell.info$.subscribe( /* same as success$ */);
 ```
 
 ## Promises:
-The `Observable` returned by the `call` method has been extended to expose a function called `promise()` which returns a promise which will emit the first value returned by the shell.
+The object returned by the `call` method also exposes a function called `promise()` which returns a promise which will emit the first value returned by the shell.
 
 ```typescript
 shell.call('My-Command')
