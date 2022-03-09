@@ -1,5 +1,7 @@
 import { ChildProcessWithoutNullStreams, spawn } from 'child_process';
+import { randomBytes } from 'crypto';
 import { debug } from 'debug';
+import { existsSync, unlinkSync } from 'fs';
 import os from 'os';
 import { firstValueFrom, Observable, of, Subject } from 'rxjs';
 import { catchError, concatMap, filter, map, switchMap, take, tap, timeout } from 'rxjs/operators';
@@ -105,6 +107,8 @@ export class PowerShell {
 
     private delimit_head = 'F0ZU7Wm1p4'; // random string
     private delimit_tail = 'AdBmCXEdsB'; // random string
+    private out_verbose: string;
+    private out_debug: string;
 
     private queue: Command[] = [];
     private tick$ = new Subject<void>();
@@ -122,6 +126,10 @@ export class PowerShell {
         log.info('[>] tmp_dir: %s', this.tmp_dir);
         log.info('[>] exe_path: %s', this.exe_path);
         log.info('[>] timeout: %s', this.timeout);
+
+        const prefix = randomBytes(8).toString('hex');
+        this.out_verbose = `${this.tmp_dir}${prefix}_fps_verbose.tmp`
+        this.out_debug = `${this.tmp_dir}${prefix}_fps_debug.tmp`
 
         this.init();
     }
@@ -150,14 +158,15 @@ export class PowerShell {
         log.info('[>] pid: %s', this.powershell.pid);
 
         this.powershell.on('exit', () => {
-            if (!this.powershell.killed) {
-                log.info('[>] child process closed itself');
-            }
-        });
+            log.info('[>] child process emitted exit event');
 
-        // this.powershell.on('close', () => console.log('[fps] close'));
-        // this.powershell.on('data', () => console.log('[fps] data'));
-        // this.powershell.on('error', () => console.log('[fps] error'));
+            if (!this.powershell.killed) {
+                log.info('[>] child process exited itself');
+            }
+
+            this.removeTempFile(this.out_verbose);
+            this.removeTempFile(this.out_debug);
+        });
 
         this.powershell.stdin.setDefaultEncoding('utf8');
         this.powershell.stdout.setEncoding('utf8');
@@ -281,8 +290,9 @@ export class PowerShell {
             command,
             this.delimit_head,
             this.delimit_tail,
-            format,
-            this.tmp_dir
+            this.out_verbose,
+            this.out_debug,
+            format
         );
 
         // queue the command context
@@ -298,6 +308,15 @@ export class PowerShell {
 
         // return the subject for this command
         return subject
+    }
+
+
+    private removeTempFile(file: string) {
+        if (existsSync(file)) {
+            log.info('[>] removing temp file %s', file);
+            unlinkSync(file);
+            log.info('[>] removed temp file %s', file);
+        }
     }
 
     public destroy() {

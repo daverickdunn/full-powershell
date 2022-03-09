@@ -7,7 +7,7 @@
     "scripts": {
         "build": "rimraf ./dist && tsc",
         "test": "set DEBUG=*&&jest --config jestconfig.json --watchAll",
-        "testone": "set DEBUG=*&&jest --config jestconfig.json -t Timeout --watchAll",
+        "testone": "set DEBUG=*&&jest --config jestconfig.json -t Parallel --watchAll",
         "prepare": "npm run build",
         "prepublishOnly": "npm test"
     },

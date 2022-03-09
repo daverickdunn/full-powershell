@@ -1,4 +1,4 @@
-import { bufferCount } from 'rxjs';
+import { bufferCount, combineLatest } from 'rxjs';
 import { PowerShell } from './index';
 
 jest.setTimeout(10000)
@@ -252,4 +252,32 @@ test('Throwing PowerShell Error', (done) => {
     );
     shell.call(`throw "Some Error!"`);
     shell.call(`Write-Output "Still running!"`);
+});
+
+test('Parallel Shells', (done) => {
+
+    let shell_1 = new PowerShell();
+    let shell_2 = new PowerShell();
+
+    combineLatest([shell_1.success$, shell_2.success$])
+        .subscribe(([s1, s2]) => {
+            if (s1[0] === 'Testing Parallel 9' && s2[0] === 'Testing Parallel 9') {
+                shell_1.destroy();
+                shell_2.destroy();
+                done();
+            }
+        })
+
+    // fuzzy test to check if temp files conflict
+    for (let i = 0; i < 10; i++) {
+        shell_1.call(`Write-Output "Testing Parallel ${i}";`)
+            .subscribe(res => {
+                expect(res.success[0]).toMatch(`Testing Parallel ${i}`);
+            })
+        shell_2.call(`Write-Output "Testing Parallel ${i}";`)
+            .subscribe(res => {
+                expect(res.success[0]).toMatch(`Testing Parallel ${i}`);
+            })
+    }
+
 });
