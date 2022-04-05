@@ -151,7 +151,7 @@ export class PowerShell {
 
         log.info('[>] init process');
 
-        const args = ['-NoLogo', '-NoExit', '-Command', '-'];
+        const args = [ '-NonInteractive', '-NoLogo', '-NoExit', '-Command', '-'];
 
         this.powershell = spawn(this.exe_path, args, { stdio: 'pipe' });
 
