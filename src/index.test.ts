@@ -212,24 +212,23 @@ test('Concurrent Calls', (done) => {
 
 test('Command Timeout', (done) => {
 
-    // note the 1 second timeout
     let shell = new PowerShell({
-        timeout: 1000
+        timeout: 2000 // note the timeout
     });
 
     // timeout should cause this call to error
-    shell.call(`Start-Sleep -Seconds 2;`)
+    shell.call('Start-Sleep -Seconds 3;')
         .subscribe({
             error: err => {
-                expect(err.message).toContain('Command timed out');
+                expect(err.message).toEqual(expect.stringContaining('Command timed out'));
             }
         })
 
-    // shell should recover and execute this call from a new process
-    shell.call('Write-Output "Concurrent Call";')
+    // should recover from timeout error and execute this call in a new process
+    shell.call('Write-Output "Second Call";')
         .subscribe({
             next: res => {
-                expect(res.success[0]).toMatch('Concurrent Call');
+                expect(res.success[0]).toMatch('Second Call');
                 shell.destroy();
                 done()
             }

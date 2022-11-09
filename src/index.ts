@@ -3,15 +3,10 @@ import { randomBytes } from 'crypto';
 import { debug } from 'debug';
 import { existsSync, unlinkSync } from 'fs';
 import os from 'os';
-import { firstValueFrom, Observable, of, Subject } from 'rxjs';
+import { firstValueFrom, Observable, of, Subject, throwError } from 'rxjs';
 import { catchError, concatMap, filter, map, switchMap, take, tap, timeout } from 'rxjs/operators';
 import { Readable, Writable } from 'stream';
 import { Format, wrap } from './wrapper';
-
-const log = {
-    info: debug('fps:info'),
-    error: debug('fps:error')
-}
 
 interface Command {
     command: string;
@@ -103,7 +98,6 @@ export class PowerShell {
     private stderr: Readable;
 
     private out$: Observable<PowerShellStreams>;
-    // private err$: Subject<any> = new Subject();
 
     private delimit_head = 'F0ZU7Wm1p4'; // random string
     private delimit_tail = 'AdBmCXEdsB'; // random string
@@ -122,16 +116,22 @@ export class PowerShell {
 
         if (!!options) this.setOptions(options);
 
-        log.info('[>] new instance');
-        log.info('[>] tmp_dir: %s', this.tmp_dir);
-        log.info('[>] exe_path: %s', this.exe_path);
-        log.info('[>] timeout: %s', this.timeout);
-
-        const prefix = randomBytes(8).toString('hex');
-        this.out_verbose = `${this.tmp_dir}${prefix}_fps_verbose.tmp`
-        this.out_debug = `${this.tmp_dir}${prefix}_fps_debug.tmp`
+        this.info('[>] new instance');
+        this.info('[>] tmp_dir: %s', this.tmp_dir);
+        this.info('[>] exe_path: %s', this.exe_path);
+        this.info('[>] timeout: %s', this.timeout);
 
         this.init();
+    }
+
+    info(...args: any[]) {
+        const x: any = debug(`fps:info [> ${this.powershell?.pid || -1}]`);
+        x(...args);
+    }
+
+    error(...args: any[]) {
+        const x: any = debug(`fps:error [! ${this.powershell?.pid || -1}]`)
+        x(...args);
     }
 
     setOptions(options: PowerShellOptions) {
@@ -141,7 +141,10 @@ export class PowerShell {
     }
 
     private init() {
-        log.info('[>] init');
+        this.info('[>] init');
+        const prefix = randomBytes(8).toString('hex');
+        this.out_verbose = `${this.tmp_dir}${prefix}_fps_verbose.tmp`
+        this.out_debug = `${this.tmp_dir}${prefix}_fps_debug.tmp`
         this.initProcess();
         this.initReaders();
         this.initQueue();
@@ -149,21 +152,16 @@ export class PowerShell {
 
     private initProcess() {
 
-        log.info('[>] init process');
+        this.info('[>] init process');
 
         const args = ['-NoLogo', '-NoExit', '-Command', '-'];
 
         this.powershell = spawn(this.exe_path, args, { stdio: 'pipe' });
 
-        log.info('[>] pid: %s', this.powershell.pid);
+        this.info('[>] pid: %s', this.powershell.pid);
 
         this.powershell.on('exit', () => {
-            log.info('[>] child process emitted exit event');
-
-            if (!this.powershell.killed) {
-                log.info('[>] child process exited itself');
-            }
-
+            this.info('[>] child process emitted exit event');
             this.removeTempFile(this.out_verbose);
             this.removeTempFile(this.out_debug);
         });
@@ -179,7 +177,7 @@ export class PowerShell {
 
     private initReaders() {
 
-        log.info('[>] init readers');
+        this.info('[>] init readers');
 
         const read_out = new BufferReader(this.delimit_head, this.delimit_tail);
         const read_err = new BufferReader(this.delimit_head, this.delimit_tail);
@@ -218,33 +216,33 @@ export class PowerShell {
 
     private initQueue() {
 
-        log.info('[>] init queue');
+        this.info('[>] init queue');
 
         // invokes a command
         // enforces timeout
         // errors calling subject
         const invoke = (command: Command) => {
-            log.info('[>] invoking: %s', command.command)
+            this.info('[>] invoking: %s', command.command)
             this.stdin.write(Buffer.from(command.wrapped))
             return this.out$.pipe(
                 take(1),
                 timeout(this.timeout),
                 map(result => ({ command, result })),
                 catchError(err => {
-                    log.error('[X] error in pipe: %O', err)
+                    this.error('[X] error in pipe: %O', err)
                     let error = err;
                     if (error.name === 'TimeoutError') {
                         error = new Error(`Command timed out after ${this.timeout} milliseconds. Check the full-powershell docs for more information.`)
                     }
                     command.subject.error(error);
-                    throw error
+                    return throwError(() => error);
                 })
             );
         }
 
         // selects next command from queue
         const handler = () => {
-            log.info('[>] %s pending', this.queue.length)
+            this.info('[>] %s pending', this.queue.length)
             return of(this.queue.shift() as Command)
                 .pipe(
                     filter(command => command !== undefined),
@@ -255,18 +253,18 @@ export class PowerShell {
         // subscribes to tick to trigger check for next command
         // concatMaps command handler to enforce order
         let sub = this.tick$.pipe(
-            tap(_ => log.info('[>] tick')),
+            tap(_ => this.info('[>] tick')),
             concatMap(_ => handler())
         )
             .subscribe({
                 next: ({ command, result }) => {
-                    log.info('[>] complete: %s', command.command)
+                    this.info('[>] complete: %s', command.command)
                     command.subject.next(result); // emit from subject returned by call()
                     command.subject.complete(); // complete subject returned by call()
                     this.tick$.next(); // check for next command in queue
                 },
                 error: err => {
-                    log.info('[>] error.......... %O', err)
+                    this.info('[>] error...')
                     sub.unsubscribe(); // clean up this observable chain
                     this.destroy(); // kill old process
                     this.init(); // start a new process
@@ -278,9 +276,9 @@ export class PowerShell {
 
     public call(command: string, format: Format = 'json') {
 
-        log.info('[>] command: %s', command)
-        log.info('[>] format: %s', format)
-        log.info('[>] pid: %s', this.powershell.pid)
+        this.info('[>] command: %s', command)
+        this.info('[>] format: %s', format)
+        this.info('[>] pid: %s', this.powershell.pid)
 
         // subject to be returned form this method
         const subject = new SubjectWithPromise<PowerShellStreams>();
@@ -310,17 +308,17 @@ export class PowerShell {
         return subject
     }
 
-
     private removeTempFile(file: string) {
         if (existsSync(file)) {
-            log.info('[>] removing temp file %s', file);
+            this.info('[>] removing temp file %s', file);
             unlinkSync(file);
-            log.info('[>] removed temp file %s', file);
+            this.info('[>] removed temp file %s', file);
         }
     }
 
     public destroy() {
-        log.info('[>] destroy called')
+        this.info('[>] destroy called');
+        this.stdin.destroy();
         return this.powershell.kill();
     }
 }
