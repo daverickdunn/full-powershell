@@ -228,11 +228,13 @@ test('Command Timeout', (done) => {
     shell.call('Write-Output "Second Call";')
         .subscribe({
             next: res => {
+                console.log(res)
                 expect(res.success[0]).toMatch('Second Call');
                 shell.destroy();
                 done()
             }
         })
+
 });
 
 test('Throwing PowerShell Error', (done) => {
@@ -278,5 +280,20 @@ test('Parallel Shells', (done) => {
                 expect(res.success[0]).toMatch(`Testing Parallel ${i}`);
             })
     }
+
+});
+
+
+test('Destroy', (done) => {
+
+    let shell = new PowerShell();
+
+    // timeout should cause this call to error
+    shell.call(`Start-Process 'pwsh sleep 15'`).subscribe()
+
+    shell.destroy().subscribe(() => {
+        expect(true).toEqual(true);
+        done();
+    })
 
 });

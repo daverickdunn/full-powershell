@@ -3,8 +3,24 @@ import { randomBytes } from 'crypto';
 import { debug } from 'debug';
 import { existsSync, unlinkSync } from 'fs';
 import os from 'os';
-import { firstValueFrom, Observable, of, Subject, throwError } from 'rxjs';
-import { catchError, concatMap, filter, map, switchMap, take, tap, timeout } from 'rxjs/operators';
+import {
+    Observable,
+    Subject,
+    catchError,
+    concatMap,
+    delay,
+    filter,
+    firstValueFrom,
+    from,
+    map,
+    of,
+    switchMap,
+    take,
+    takeUntil,
+    tap,
+    throwError,
+    timeout
+} from 'rxjs';
 import { Readable, Writable } from 'stream';
 import { Format, wrap } from './wrapper';
 
@@ -85,12 +101,15 @@ interface PowerShellOptions {
 }
 
 export class PowerShell {
+
     public success$ = new Subject<Array<any>>();
     public error$ = new Subject<Array<any>>();
     public warning$ = new Subject<Array<any>>();
     public verbose$ = new Subject<Array<any>>();
     public debug$ = new Subject<Array<any>>();
     public info$ = new Subject<Array<any>>();
+
+    public closed$ = new SubjectWithPromise<boolean>();
 
     private powershell: ChildProcessWithoutNullStreams;
     private stdin: Writable;
@@ -105,7 +124,7 @@ export class PowerShell {
     private out_debug: string;
 
     private queue: Command[] = [];
-    private tick$ = new Subject<void>();
+    private tick$ = new Subject<string>();
 
     private tmp_dir: string = '';
     /* istanbul ignore next */
@@ -162,8 +181,13 @@ export class PowerShell {
 
         this.powershell.on('exit', () => {
             this.info('[>] child process emitted exit event');
+        });
+
+        this.powershell.on('close', (e: any) => {
+            this.info('[>] child process emitted close event');
             this.removeTempFile(this.out_verbose);
             this.removeTempFile(this.out_debug);
+            this.closed$.next(true);
         });
 
         this.powershell.stdin.setDefaultEncoding('utf8');
@@ -223,6 +247,8 @@ export class PowerShell {
         // errors calling subject
         const invoke = (command: Command) => {
             this.info('[>] invoking: %s', command.command)
+            this.info('[>] subject observed: %s', command.subject.observed)
+            this.info('[>] subject closed: %s', command.subject.closed)
             this.stdin.write(Buffer.from(command.wrapped))
             return this.out$.pipe(
                 take(1),
@@ -253,7 +279,7 @@ export class PowerShell {
         // subscribes to tick to trigger check for next command
         // concatMaps command handler to enforce order
         let sub = this.tick$.pipe(
-            tap(_ => this.info('[>] tick')),
+            tap(caller => this.info('[>] tick %s', caller)),
             concatMap(_ => handler())
         )
             .subscribe({
@@ -261,17 +287,16 @@ export class PowerShell {
                     this.info('[>] complete: %s', command.command)
                     command.subject.next(result); // emit from subject returned by call()
                     command.subject.complete(); // complete subject returned by call()
-                    this.tick$.next(); // check for next command in queue
+                    this.tick$.next('command complete'); // check for next command in queue
                 },
                 error: err => {
                     this.info('[>] error...')
                     sub.unsubscribe(); // clean up this observable chain
-                    this.destroy(); // kill old process
-                    this.init(); // start a new process
+                    this.destroy().subscribe(_ => this.init()) // start a new process
                 }
             })
 
-        this.tick$.next();
+        this.tick$.next('queue initialised');
     }
 
     public call(command: string, format: Format = 'json') {
@@ -302,7 +327,7 @@ export class PowerShell {
         })
 
         // attempt to execute the command after this function has returned the subject
-        queueMicrotask(() => this.tick$.next())
+        queueMicrotask(() => this.tick$.next('call queued'))
 
         // return the subject for this command
         return subject
@@ -317,8 +342,21 @@ export class PowerShell {
     }
 
     public destroy() {
+        
         this.info('[>] destroy called');
-        this.stdin.destroy();
-        return this.powershell.kill();
+
+        // try each until 'close' event has been received
+        from<Array<'SIGTERM' | 'SIGINT'>>([
+            'SIGTERM',
+            'SIGINT'
+        ]).pipe(
+            concatMap(item => of(item).pipe(delay(3000))),
+            takeUntil(this.closed$),
+            tap(signal => this.info('[>] sending signal %s', signal))
+        )
+            .subscribe(signal => this.powershell.kill(signal))
+
+        return this.closed$
+
     }
 }
