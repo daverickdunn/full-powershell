@@ -8,8 +8,7 @@ test('Success JSON', (done) => {
     shell.success$.subscribe(
         (res) => {
             expect(res[0]).toHaveProperty('DateTime');
-            shell.destroy();
-            done();
+            shell.destroy().subscribe(_ => done());
         }
     );
     shell.call(`Get-Date;`);
@@ -20,8 +19,7 @@ test('Success String', (done) => {
     shell.success$.subscribe(
         (res) => {
             expect(res[0]).toMatch('Testing Write-Output');
-            shell.destroy();
-            done();
+            shell.destroy().subscribe(_ => done());
         }
     );
     shell.call(`Write-Output "Testing Write-Output";`, 'string');
@@ -32,8 +30,7 @@ test('Success Default toString', (done) => {
     shell.success$.subscribe(
         (res) => {
             expect(res[0]).toMatch('Testing Write-Output');
-            shell.destroy();
-            done();
+            shell.destroy().subscribe(_ => done());
         }
     );
     shell.call(`Write-Output "Testing Write-Output";`, null);
@@ -44,8 +41,7 @@ test('Error', (done) => {
     shell.error$.subscribe(
         (res) => {
             expect(res[0]).toEqual(expect.stringContaining('Testing Write-Error'));
-            shell.destroy();
-            done();
+            shell.destroy().subscribe(_ => done());
         }
     );
     shell.call(`Write-Error "Testing Write-Error";`);
@@ -56,8 +52,7 @@ test('Warning', (done) => {
     shell.warning$.subscribe(
         (res) => {
             expect(res[0]).toEqual(expect.stringContaining('Testing Write-Warning'));
-            shell.destroy();
-            done();
+            shell.destroy().subscribe(_ => done());
         }
     );
     shell.call(`Write-Warning "Testing Write-Warning";`);
@@ -68,8 +63,7 @@ test('Verbose', (done) => {
     shell.verbose$.subscribe(
         (res) => {
             expect(res[0]).toEqual(expect.stringContaining('Testing Write-Verbose'));
-            shell.destroy();
-            done();
+            shell.destroy().subscribe(_ => done());
         }
     );
     shell.call(`$VerbosePreference = 'Continue'; Write-Verbose "Testing Write-Verbose";`);
@@ -80,8 +74,7 @@ test('Debug', (done) => {
     shell.debug$.subscribe(
         (res) => {
             expect(res[0]).toEqual(expect.stringContaining('Testing Write-Debug'));
-            shell.destroy();
-            done();
+            shell.destroy().subscribe(_ => done());
         }
     );
     shell.call(`$DebugPreference = 'Continue'; Write-Debug "Testing Write-Debug";`);
@@ -92,8 +85,7 @@ test('Info', (done) => {
     shell.info$.subscribe(
         (res) => {
             expect(res[0]).toEqual(expect.stringContaining('Testing Write-Information'));
-            shell.destroy();
-            done();
+            shell.destroy().subscribe(_ => done());
         }
     );
     shell.call(`$InformationPreference = 'Continue'; Write-Information "Testing Write-Information";`);
@@ -105,8 +97,7 @@ test('Success Multi JSON', (done) => {
         (res) => {
             expect(res[0]).toHaveProperty('DateTime');
             expect(res[1]).toHaveProperty('DateTime');
-            shell.destroy();
-            done();
+            shell.destroy().subscribe(_ => done());
         }
     );
     shell.call(`Get-Date; Get-Date;`);
@@ -118,8 +109,7 @@ test('Success Multi String', (done) => {
         (res) => {
             expect(res[0]).toMatch('This is a test string');
             expect(res[1]).toMatch('This is another test string');
-            shell.destroy();
-            done();
+            shell.destroy().subscribe(_ => done());
         }
     );
     shell.call(`Write-Output "This is a test string"; Write-Output "This is another test string";`, 'string');
@@ -133,8 +123,7 @@ test('Call Structure', (done) => {
             expect(res).toHaveProperty('error');
             expect(res).toHaveProperty('warning');
             expect(res).toHaveProperty('info');
-            shell.destroy();
-            done();
+            shell.destroy().subscribe(_ => done());
         })
 });
 
@@ -143,8 +132,7 @@ test('Variable Scope', (done) => {
     shell.call(`$XYZ = 'something'; Write-Output $XYZ;`);
     shell.call(`Write-Output $XYZ;`).subscribe(res => {
         expect(res.success).toContain('something');
-        shell.destroy();
-        done();
+        shell.destroy().subscribe(_ => done());
     })
 });
 
@@ -157,8 +145,7 @@ test('Promises', (done) => {
         })
         .then(res => {
             expect(res.success[0]).toMatch('Testing More Promises');
-            shell.destroy();
-            done();
+            shell.destroy().subscribe(_ => done());
         })
 });
 
@@ -168,8 +155,7 @@ test('Temporary File Directory', (done) => {
         .subscribe(
             res => {
                 expect(res.success[0]).toMatch('Testing tmp_dir');
-                shell.destroy();
-                done();
+                shell.destroy().subscribe(_ => done());
             });
 });
 
@@ -180,8 +166,7 @@ test('PowerShell Path', (done) => {
         .subscribe(
             res => {
                 expect(res.success[0]).toMatch('Testing exe_path');
-                shell.destroy();
-                done();
+                shell.destroy().subscribe(_ => done());
             });
 });
 
@@ -198,8 +183,7 @@ test('Concurrent Calls', (done) => {
                 expect(res[1][0]).toMatch('Call 2');
                 expect(res[2][0]).toMatch('Call 3');
                 expect(res[3][0]).toMatch('Call 4');
-                shell.destroy();
-                done();
+                shell.destroy().subscribe(_ => done());
             }
         );
 
@@ -228,10 +212,8 @@ test('Command Timeout', (done) => {
     shell.call('Write-Output "Second Call";')
         .subscribe({
             next: res => {
-                console.log(res)
                 expect(res.success[0]).toMatch('Second Call');
-                shell.destroy();
-                done()
+                shell.destroy().subscribe(_ => done());
             }
         })
 
@@ -247,8 +229,7 @@ test('Throwing PowerShell Error', (done) => {
     shell.success$.subscribe(
         (res) => {
             expect(res[0]).toEqual(expect.stringContaining('Still running!'));
-            shell.destroy();
-            done();
+            shell.destroy().subscribe(_ => done());
         }
     );
     shell.call(`throw "Some Error!"`);
@@ -263,9 +244,11 @@ test('Parallel Shells', (done) => {
     combineLatest([shell_1.success$, shell_2.success$])
         .subscribe(([s1, s2]) => {
             if (s1[0] === 'Testing Parallel 9' && s2[0] === 'Testing Parallel 9') {
-                shell_1.destroy();
-                shell_2.destroy();
-                done();
+                combineLatest([
+                    shell_1.destroy(),
+                    shell_2.destroy()
+                ])
+                    .subscribe(_ => done());
             }
         })
 
@@ -282,7 +265,6 @@ test('Parallel Shells', (done) => {
     }
 
 });
-
 
 test('Destroy', (done) => {
 

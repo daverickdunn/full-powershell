@@ -109,8 +109,6 @@ export class PowerShell {
     public debug$ = new Subject<Array<any>>();
     public info$ = new Subject<Array<any>>();
 
-    public closed$ = new SubjectWithPromise<boolean>();
-
     private powershell: ChildProcessWithoutNullStreams;
     private stdin: Writable;
     private stdout: Readable;
@@ -125,6 +123,7 @@ export class PowerShell {
 
     private queue: Command[] = [];
     private tick$ = new Subject<string>();
+    private closed$ = new SubjectWithPromise<boolean>();
 
     private tmp_dir: string = '';
     /* istanbul ignore next */
@@ -162,8 +161,9 @@ export class PowerShell {
     private init() {
         this.info('[>] init');
         const prefix = randomBytes(8).toString('hex');
-        this.out_verbose = `${this.tmp_dir}${prefix}_fps_verbose.tmp`
-        this.out_debug = `${this.tmp_dir}${prefix}_fps_debug.tmp`
+        this.out_verbose = `${this.tmp_dir}${prefix}_fps_verbose.tmp`;
+        this.out_debug = `${this.tmp_dir}${prefix}_fps_debug.tmp`;
+        this.closed$ = new SubjectWithPromise<boolean>();
         this.initProcess();
         this.initReaders();
         this.initQueue();
@@ -342,7 +342,7 @@ export class PowerShell {
     }
 
     public destroy() {
-        
+
         this.info('[>] destroy called');
 
         // try each until 'close' event has been received
