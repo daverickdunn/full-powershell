@@ -1,4 +1,4 @@
-![alt text](img/waves.svg)
+![Full PowerShell Waves](img/waves.svg)
 
 # Full Powershell
 Capture, separate and serialise all [6 PowerShell message streams](https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_redirection) at their source.
