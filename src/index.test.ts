@@ -69,6 +69,18 @@ test('Verbose', (done) => {
     shell.call(`$VerbosePreference = 'Continue'; Write-Verbose "Testing Write-Verbose";`);
 });
 
+test('Disable Verbose', (done) => {
+    let shell = new PowerShell({
+        verbose: false
+    });
+    shell.call(`$VerbosePreference = 'Continue'; Write-Verbose "Verbose output";`).subscribe(
+        (res) => {
+            expect(res.verbose).toHaveLength(0);
+            shell.destroy().subscribe(_ => done());
+        }
+    )
+});
+
 test('Debug', (done) => {
     let shell = new PowerShell();
     shell.debug$.subscribe(
@@ -78,6 +90,18 @@ test('Debug', (done) => {
         }
     );
     shell.call(`$DebugPreference = 'Continue'; Write-Debug "Testing Write-Debug";`);
+});
+
+test('Disable Debug', (done) => {
+    let shell = new PowerShell({
+        debug: false
+    });
+    shell.call(`$DebugPreference = 'Continue'; Write-Debug "Debug output";`).subscribe(
+        (res) => {
+            expect(res.debug).toHaveLength(0);
+            shell.destroy().subscribe(_ => done());
+        }
+    )
 });
 
 test('Info', (done) => {

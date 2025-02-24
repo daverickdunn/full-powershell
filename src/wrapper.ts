@@ -12,12 +12,29 @@ function serialise(variable: string, format: Format) {
     return `@(${variable})`;
 }
 
-export function wrap(command: string, delimit_head: string, delimit_tail: string, out_verbose: string, out_debug: string, format: Format) {
+interface WrapParams {
+    command: string;
+    delimit_head: string;
+    delimit_tail: string;
+    out_verbose: string;
+    out_debug: string;
+    format: Format;
+    verbose: boolean;
+    debug: boolean;
+}
+
+export function wrap(params: WrapParams) {
+    const { command, delimit_head, delimit_tail, out_verbose, out_debug, format, verbose, debug } = params;
 
     const template = `
     $OutputEncoding = [Console]::OutputEncoding = [Text.UTF8Encoding]::UTF8;
-    $vv = "${out_verbose}"
-    $dv = "${out_debug}"
+
+    $verboseEnabled = $${verbose}
+    $debugEnabled = $${debug}
+
+    $vv = if ($verboseEnabled) { "${out_verbose}" } else { $null }
+    $dv = if ($debugEnabled) { "${out_debug}" } else { $null }
+
     $delimit_head_A = "${delimit_head.slice(0, 5)}"
     $delimit_head_B = "${delimit_head.slice(5)}"
     $delimit_tail_A = "${delimit_tail.slice(0, 5)}"
@@ -32,11 +49,15 @@ export function wrap(command: string, delimit_head: string, delimit_tail: string
     }
     finally {
 
-        $verbose = Get-Content $vv
-        $debug = Get-Content $dv
+        $verbose = if ($verboseEnabled) { Get-Content $vv } else { @() }
+        $debug = if ($debugEnabled) { Get-Content $dv } else { @() }
 
-        Remove-Item $vv | Out-Null
-        Remove-Item $dv | Out-Null
+        if ($verboseEnabled) {
+            Remove-Item $vv | Out-Null
+        }
+        if ($debugEnabled) {
+            Remove-Item $dv | Out-Null
+        }
 
         $rxjs_pwsh = [pscustomobject]@{ 
             result = [pscustomobject]@{ 

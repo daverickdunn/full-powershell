@@ -4,9 +4,13 @@
 Capture, separate and serialise all [6 PowerShell message streams](https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_redirection) at their source.
 
 # How it works
-PowerShell has 6 message streams in addition to **Stdout** and **Stderr**. Cramming these 6 streams all through stdout removes each stream's semantics and is a nightmare to parse. Unexpected and intermittent warning or error messages (very common when remoting!) will make your application very brittle. Full-PowerShell sorts these streams _before_ returning them, so output from one stream will not affect the other, so unexpected server messages won't break your program.
+PowerShell has 6 message streams in addition to **Stdout** and **Stderr**. Piping these 6 streams all through stdout simultaneously removes each stream's semantics and is a nightmare to parse - unexpected/intermittent warning or error messages (very common when remoting) can easily break your application. 
 
-This library accepts PowerShell commands as strings. It wraps those commands in an `Invoke-Command` block that pipes their output into individual streams. All 6 message streams are captured and sorted at their source, they are then serialised using PowerShell's standard `ConvertTo-JSON` function, sent back to the parent Node.js process, before finally being deserilaised as individual streams. They can be subscribed to as an RxJS Observable, or as a Promise. 
+Full-PowerShell captures and serialises these streams _before_ returning them, so output from one stream will not affect the other.
+
+This library wraps your commands in an `Invoke-Command` block that pipes their output into 6 individual streams. All 6 streams are captured while your command/script executes, once it has completed the streams are serialised as JSON, returned to parent Node.js process, and finally deserialised as individual streams.
+
+Invocations can be subscribed to as an RxJS Observable, or as a Promise. 
 
 The source code is fairly concise, take a look at [index.ts](https://github.com/daverickdunn/full-powershell/blob/master/src/index.ts) and [wrapper.ts](https://github.com/daverickdunn/full-powershell/blob/master/src/wrapper.ts) to see exactly how it works.
 
@@ -67,6 +71,8 @@ interface PowerShellOptions {
     tmp_dir?: string
     exe_path?: string
     timeout?: number
+    verbose?: boolean
+    debug?: boolean
 }
 ```
 
@@ -75,6 +81,10 @@ interface PowerShellOptions {
 - `exe_path` - _Default: `powershell` for windows, `pwsh` for nix_. Explicitly set the path or command name for the PowerShell executable (example: `'pwsh'` or `'C:\\Program Files\\PowerShell\\7\\pwsh.exe'`)
 
 - `timeout` - _Default: 10 minutes_. Set number of milliseconds before each call to this shell will timeout. **Warning:** A timeout will result in the PowerShell child process being terminated and a new process created, any pending calls will be errored and PowerShell context will be lost.
+
+- `verbose` - _Default: true_ Optionally disable verbose output (this may improve performance as capturing verbose requires writing to disk)
+
+- `debug` - _Default: true_ Optionally disable debug output (this may improve performance as capturing debug requires writing to disk)
 
 Example:
 ```typescript

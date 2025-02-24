@@ -98,6 +98,8 @@ interface PowerShellOptions {
     tmp_dir?: string
     exe_path?: string
     timeout?: number // milliseconds
+    verbose?: boolean
+    debug?: boolean
 }
 
 export class PowerShell {
@@ -130,6 +132,9 @@ export class PowerShell {
     private exe_path: string = (os.platform() === 'win32' ? 'powershell' : 'pwsh');
     private timeout = 600000; // 10 minutes
 
+    private verbose: boolean = true;
+    private debug: boolean = true;
+
     constructor(options?: PowerShellOptions) {
 
         if (!!options) this.setOptions(options);
@@ -156,6 +161,8 @@ export class PowerShell {
         if (options.tmp_dir) this.tmp_dir = options.tmp_dir;
         if (options.exe_path) this.exe_path = options.exe_path;
         if (options.timeout) this.timeout = options.timeout;
+        this.verbose = options.verbose ?? true;
+        this.debug = options.debug ?? true;
     }
 
     private init() {
@@ -309,14 +316,16 @@ export class PowerShell {
         const subject = new SubjectWithPromise<PowerShellStreams>();
 
         // wrap the command in the serialisation script
-        const wrapped: string = wrap(
+        const wrapped: string = wrap({
             command,
-            this.delimit_head,
-            this.delimit_tail,
-            this.out_verbose,
-            this.out_debug,
-            format
-        );
+            delimit_head: this.delimit_head,
+            delimit_tail: this.delimit_tail,
+            out_verbose: this.out_verbose,
+            out_debug: this.out_debug,
+            format,
+            verbose: this.verbose,
+            debug: this.debug
+        });
 
         // queue the command context
         this.queue.push({
