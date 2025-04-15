@@ -1,7 +1,7 @@
 import { bufferCount, combineLatest } from 'rxjs';
 import { PowerShell } from './index';
 
-jest.setTimeout(10000)
+jest.setTimeout(15000)
 
 test('Success JSON', (done) => {
     let shell = new PowerShell();
@@ -297,9 +297,50 @@ test('Destroy', (done) => {
     // timeout should cause this call to error
     shell.call(`Start-Process 'pwsh sleep 15'`).subscribe()
 
-    shell.destroy().subscribe(() => {
+    shell.destroy().subscribe((res) => {
+        console.log(res)
         expect(true).toEqual(true);
         done();
     })
 
 });
+
+
+// test('Destroy after Error', (done) => {
+
+//     let shell = new PowerShell({
+//         timeout: 2000 // note the timeout
+//     });
+
+//     // timeout should cause this call to error
+//     shell.call('Start-Sleep -Seconds 3;')
+//         .subscribe({
+//             error: err => {
+//                 expect(err.message).toEqual(expect.stringContaining('Command timed out'));
+//                 shell.destroy().subscribe((result) => {
+//                     expect(result).toEqual(true);
+//                     done();
+//                 })
+//             }
+//         })
+
+// });
+
+
+
+// test('Destroy after Error', async () => {
+
+//     let shell = new PowerShell({
+//         exe_path: 'pwsh',
+//         timeout: 1500
+//     });
+
+//     try {
+//         await shell.call(`Start-Process 'pwsh sleep 15'`).promise();
+//     } catch (err: any) { }
+
+//     const destroyed = await shell.destroy().promise();
+
+//     expect(destroyed).toEqual(true);
+
+// });

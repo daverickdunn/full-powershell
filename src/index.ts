@@ -125,7 +125,9 @@ export class PowerShell {
 
     private queue: Command[] = [];
     private tick$ = new Subject<string>();
+    private isClosed = false;
     private closed$ = new SubjectWithPromise<boolean>();
+
 
     private tmp_dir: string = '';
     /* istanbul ignore next */
@@ -170,10 +172,36 @@ export class PowerShell {
         const prefix = randomBytes(8).toString('hex');
         this.out_verbose = `${this.tmp_dir}${prefix}_fps_verbose.tmp`;
         this.out_debug = `${this.tmp_dir}${prefix}_fps_debug.tmp`;
+        this.isClosed = false;
         this.closed$ = new SubjectWithPromise<boolean>();
         this.initProcess();
         this.initReaders();
         this.initQueue();
+    }
+
+    private closeEventHandler(code: number | null, signal: NodeJS.Signals | null) {
+
+        this.info('[>] child process emitted a \'close\' event');
+        this.info('[>] exit code: %s', code);
+        this.info('[>] exit signal: %s', signal);
+
+        if (this.isClosed) {
+            this.info('[>] already closed!');
+            return;
+        }
+
+        this.info('[>]', this.stdin?.destroyed ? 'stdin destroyed' : 'stdin not destroyed');
+        this.info('[>]', this.stdout?.destroyed ? 'stdout destroyed' : 'stdout not destroyed');
+        this.info('[>]', this.stderr?.destroyed ? 'stderr destroyed' : 'stderr not destroyed');
+
+        this.info('[>] removing temp files');
+        this.removeTempFile(this.out_verbose);
+        this.removeTempFile(this.out_debug);
+
+
+        this.isClosed = true;
+        this.closed$.next(true);
+        this.info('[>] process closed');
     }
 
     private initProcess() {
@@ -186,16 +214,7 @@ export class PowerShell {
 
         this.info('[>] pid: %s', this.powershell.pid);
 
-        this.powershell.on('exit', () => {
-            this.info('[>] child process emitted exit event');
-        });
-
-        this.powershell.on('close', (e: any) => {
-            this.info('[>] child process emitted close event');
-            this.removeTempFile(this.out_verbose);
-            this.removeTempFile(this.out_debug);
-            this.closed$.next(true);
-        });
+        this.powershell.once('close', this.closeEventHandler.bind(this));
 
         this.powershell.stdin.setDefaultEncoding('utf8');
         this.powershell.stdout.setEncoding('utf8');
@@ -256,7 +275,15 @@ export class PowerShell {
             this.info('[>] invoking: %s', command.command)
             this.info('[>] subject observed: %s', command.subject.observed)
             this.info('[>] subject closed: %s', command.subject.closed)
-            this.stdin.write(Buffer.from(command.wrapped))
+
+            if (!this.stdin.writable){
+                this.error('[>] stdin not writable')
+                command.subject.error(new Error('stdin not writable'));
+                return throwError(() => new Error('stdin not writable'));
+            }
+
+            this.stdin.write(Buffer.from(command.wrapped));
+
             return this.out$.pipe(
                 take(1),
                 timeout(this.timeout),
@@ -355,7 +382,8 @@ export class PowerShell {
         this.info('[>] destroy called');
 
         // try each until 'close' event has been received
-        from<Array<'SIGTERM' | 'SIGINT'>>([
+        from<Array<'SIGKILL' | 'SIGTERM' | 'SIGINT'>>([
+            'SIGKILL',
             'SIGTERM',
             'SIGINT'
         ]).pipe(
@@ -363,7 +391,12 @@ export class PowerShell {
             takeUntil(this.closed$),
             tap(signal => this.info('[>] sending signal %s', signal))
         )
-            .subscribe(signal => this.powershell.kill(signal))
+            .subscribe(signal => {
+                if (this.powershell.pid) {
+                    this.info('[>] killing process %s', this.powershell.pid);
+                    process.kill(this.powershell.pid, signal);
+                }
+            })
 
         return this.closed$
 
