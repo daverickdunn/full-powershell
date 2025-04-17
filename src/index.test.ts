@@ -4,7 +4,7 @@ import { PowerShell } from './index';
 jest.setTimeout(15000)
 
 test('Success JSON', (done) => {
-    let shell = new PowerShell();
+    const shell = new PowerShell();
     shell.success$.subscribe(
         (res) => {
             expect(res[0]).toHaveProperty('DateTime');
@@ -15,7 +15,7 @@ test('Success JSON', (done) => {
 });
 
 test('Success String', (done) => {
-    let shell = new PowerShell();
+    const shell = new PowerShell();
     shell.success$.subscribe(
         (res) => {
             expect(res[0]).toMatch('Testing Write-Output');
@@ -26,7 +26,7 @@ test('Success String', (done) => {
 });
 
 test('Success Default toString', (done) => {
-    let shell = new PowerShell();
+    const shell = new PowerShell();
     shell.success$.subscribe(
         (res) => {
             expect(res[0]).toMatch('Testing Write-Output');
@@ -37,7 +37,7 @@ test('Success Default toString', (done) => {
 });
 
 test('Error', (done) => {
-    let shell = new PowerShell();
+    const shell = new PowerShell();
     shell.error$.subscribe(
         (res) => {
             expect(res[0]).toEqual(expect.stringContaining('Testing Write-Error'));
@@ -48,7 +48,7 @@ test('Error', (done) => {
 });
 
 test('Warning', (done) => {
-    let shell = new PowerShell();
+    const shell = new PowerShell();
     shell.warning$.subscribe(
         (res) => {
             expect(res[0]).toEqual(expect.stringContaining('Testing Write-Warning'));
@@ -59,7 +59,7 @@ test('Warning', (done) => {
 });
 
 test('Verbose', (done) => {
-    let shell = new PowerShell();
+    const shell = new PowerShell();
     shell.verbose$.subscribe(
         (res) => {
             expect(res[0]).toEqual(expect.stringContaining('Testing Write-Verbose'));
@@ -70,7 +70,7 @@ test('Verbose', (done) => {
 });
 
 test('Disable Verbose', (done) => {
-    let shell = new PowerShell({
+    const shell = new PowerShell({
         verbose: false
     });
     shell.call(`$VerbosePreference = 'Continue'; Write-Verbose "Verbose output";`).subscribe(
@@ -82,7 +82,7 @@ test('Disable Verbose', (done) => {
 });
 
 test('Debug', (done) => {
-    let shell = new PowerShell();
+    const shell = new PowerShell();
     shell.debug$.subscribe(
         (res) => {
             expect(res[0]).toEqual(expect.stringContaining('Testing Write-Debug'));
@@ -93,7 +93,7 @@ test('Debug', (done) => {
 });
 
 test('Disable Debug', (done) => {
-    let shell = new PowerShell({
+    const shell = new PowerShell({
         debug: false
     });
     shell.call(`$DebugPreference = 'Continue'; Write-Debug "Debug output";`).subscribe(
@@ -105,7 +105,7 @@ test('Disable Debug', (done) => {
 });
 
 test('Info', (done) => {
-    let shell = new PowerShell();
+    const shell = new PowerShell();
     shell.info$.subscribe(
         (res) => {
             expect(res[0]).toEqual(expect.stringContaining('Testing Write-Information'));
@@ -116,7 +116,7 @@ test('Info', (done) => {
 });
 
 test('Success Multi JSON', (done) => {
-    let shell = new PowerShell();
+    const shell = new PowerShell();
     shell.success$.subscribe(
         (res) => {
             expect(res[0]).toHaveProperty('DateTime');
@@ -128,7 +128,7 @@ test('Success Multi JSON', (done) => {
 });
 
 test('Success Multi String', (done) => {
-    let shell = new PowerShell();
+    const shell = new PowerShell();
     shell.success$.subscribe(
         (res) => {
             expect(res[0]).toMatch('This is a test string');
@@ -140,7 +140,7 @@ test('Success Multi String', (done) => {
 });
 
 test('Call Structure', (done) => {
-    let shell = new PowerShell();
+    const shell = new PowerShell();
     shell.call(`Write-Output "This is a test string";`, 'string')
         .subscribe(res => {
             expect(res).toHaveProperty('success');
@@ -152,7 +152,7 @@ test('Call Structure', (done) => {
 });
 
 test('Variable Scope', (done) => {
-    let shell = new PowerShell();
+    const shell = new PowerShell();
     shell.call(`$XYZ = 'something'; Write-Output $XYZ;`);
     shell.call(`Write-Output $XYZ;`).subscribe(res => {
         expect(res.success).toContain('something');
@@ -161,7 +161,7 @@ test('Variable Scope', (done) => {
 });
 
 test('Promises', (done) => {
-    let shell = new PowerShell();
+    const shell = new PowerShell();
     shell.call(`Write-Output "Testing Promises";`, 'string').promise()
         .then(res => {
             expect(res.success[0]).toMatch('Testing Promises');
@@ -196,7 +196,7 @@ test('PowerShell Path', (done) => {
 
 test('Concurrent Calls', (done) => {
 
-    let shell = new PowerShell();
+    const shell = new PowerShell();
 
     shell.success$.pipe(
         bufferCount(4)
@@ -220,7 +220,7 @@ test('Concurrent Calls', (done) => {
 
 test('Command Timeout', (done) => {
 
-    let shell = new PowerShell({
+    const shell = new PowerShell({
         timeout: 2000 // note the timeout
     });
 
@@ -244,7 +244,7 @@ test('Command Timeout', (done) => {
 });
 
 test('Throwing PowerShell Error', (done) => {
-    let shell = new PowerShell();
+    const shell = new PowerShell();
     shell.error$.subscribe(
         (res) => {
             expect(res[0]).toEqual(expect.stringContaining('Some Error!'));
@@ -262,8 +262,8 @@ test('Throwing PowerShell Error', (done) => {
 
 test('Parallel Shells', (done) => {
 
-    let shell_1 = new PowerShell();
-    let shell_2 = new PowerShell();
+    const shell_1 = new PowerShell();
+    const shell_2 = new PowerShell();
 
     combineLatest([shell_1.success$, shell_2.success$])
         .subscribe(([s1, s2]) => {
@@ -292,55 +292,66 @@ test('Parallel Shells', (done) => {
 
 test('Destroy', (done) => {
 
-    let shell = new PowerShell();
+    const shell = new PowerShell();
 
     // timeout should cause this call to error
     shell.call(`Start-Process 'pwsh sleep 15'`).subscribe()
 
     shell.destroy().subscribe((res) => {
-        console.log(res)
         expect(true).toEqual(true);
         done();
     })
 
 });
 
+test('Destroy after Error', (done) => {
 
-// test('Destroy after Error', (done) => {
+    const shell = new PowerShell({
+        timeout: 2000 // note the timeout
+    });
 
-//     let shell = new PowerShell({
-//         timeout: 2000 // note the timeout
-//     });
+    // timeout should cause this call to error
+    shell.call('Start-Sleep -Seconds 3;')
+        .subscribe({
+            error: err => {
 
-//     // timeout should cause this call to error
-//     shell.call('Start-Sleep -Seconds 3;')
-//         .subscribe({
-//             error: err => {
-//                 expect(err.message).toEqual(expect.stringContaining('Command timed out'));
-//                 shell.destroy().subscribe((result) => {
-//                     expect(result).toEqual(true);
-//                     done();
-//                 })
-//             }
-//         })
+                expect(err.message).toEqual(expect.stringContaining('Command timed out'));
 
-// });
+                shell.destroy().subscribe((result) => {
+                    expect(result).toEqual(true);
+                    done();
+                })
 
+            }
+        })
 
+});
 
-// test('Destroy after Error', async () => {
+test('Process Closed', (done) => {
 
-//     let shell = new PowerShell({
-//         exe_path: 'pwsh',
-//         timeout: 1500
-//     });
+    const shell = new PowerShell({
+        timeout: 3000 // note the timeout
+    });
 
-//     try {
-//         await shell.call(`Start-Process 'pwsh sleep 15'`).promise();
-//     } catch (err: any) { }
+    // timeout should cause this call to error
+    shell.call(`Start-Sleep -Seconds 4;`).subscribe({
+        error: err => {
+            expect(err.message).toEqual(expect.stringContaining('Process has been closed'));
+        }
+    })
 
-//     const destroyed = await shell.destroy().promise();
+    shell.call(`Get-Date`).subscribe({
+        error: err => {
+            expect(err.message).toEqual(expect.stringContaining('Process has been closed'));
+        }
+    })
 
-//     expect(destroyed).toEqual(true);
+    setTimeout(() => {
+        shell.destroy().subscribe()
+    }, 1000)
 
-// });
+    setTimeout(() => {
+        done();
+    }, 5000)
+
+});

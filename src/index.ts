@@ -14,6 +14,8 @@ import {
     from,
     map,
     of,
+    race,
+    skipWhile,
     switchMap,
     take,
     takeUntil,
@@ -124,11 +126,17 @@ export class PowerShell {
     private out_debug: string;
 
     private queue: Command[] = [];
-    private tick$ = new Subject<string>();
-    private isClosed = false;
-    private closed$ = new SubjectWithPromise<boolean>();
+    private tick$: Subject<string>;
+    private isRunning = false;
 
+    private isRespawning = false;
+    private respawned$: SubjectWithPromise<boolean>;
 
+    private isClosing = false;
+    private closing$: SubjectWithPromise<boolean>;
+    private closed$: SubjectWithPromise<boolean>;
+
+    private subscriptions: Array<Subject<any>> = [];
     private tmp_dir: string = '';
     /* istanbul ignore next */
     private exe_path: string = (os.platform() === 'win32' ? 'powershell' : 'pwsh');
@@ -159,7 +167,7 @@ export class PowerShell {
         x(...args);
     }
 
-    setOptions(options: PowerShellOptions) {
+    private setOptions(options: PowerShellOptions) {
         if (options.tmp_dir) this.tmp_dir = options.tmp_dir;
         if (options.exe_path) this.exe_path = options.exe_path;
         if (options.timeout) this.timeout = options.timeout;
@@ -167,16 +175,65 @@ export class PowerShell {
         this.debug = options.debug ?? true;
     }
 
+    public get pid() {
+        return this.powershell.pid;
+    }
+
+    public get isBusy() {
+        return this.queue.length > 0 || this.isRunning || this.isClosing;
+    }
+
     private init() {
         this.info('[>] init');
         const prefix = randomBytes(8).toString('hex');
         this.out_verbose = `${this.tmp_dir}${prefix}_fps_verbose.tmp`;
         this.out_debug = `${this.tmp_dir}${prefix}_fps_debug.tmp`;
-        this.isClosed = false;
-        this.closed$ = new SubjectWithPromise<boolean>();
+
+        this.tick$ = new Subject<string>();
+
         this.initProcess();
         this.initReaders();
-        this.initQueue();
+        this.initHandler();
+
+        this.isRespawning = false;
+        this.respawned$ = new SubjectWithPromise<boolean>();
+
+        this.isClosing = false;
+        this.closed$ = new SubjectWithPromise<boolean>();
+        this.closing$ = new SubjectWithPromise<boolean>();
+
+        this.subscriptions = [
+            this.tick$,
+            this.respawned$,
+            this.closed$,
+            this.closing$
+        ];
+
+        this.closed$.subscribe(res => {
+            this.info('[>] closed$ emitted %s', res);
+            while (this.queue.length > 0) {
+                const command = this.queue.pop()!;
+                this.info('[>] subject status: %s %s', command.subject.observed, command.subject.closed);
+                command.subject.error(new Error('Process has been closed'));
+                command.subject.complete();
+                this.info('[>] cancelled command: %s', command.command);
+                this.info('[>] subject status: %s %s', command.subject.observed, command.subject.closed);
+            }
+            for (const sub of this.subscriptions) {
+                sub.unsubscribe();
+            }
+            this.subscriptions = [];
+        })
+
+        this.respawned$.subscribe(res => {
+            this.info('[>] respawned$ emitted %s', res);
+            for (const sub of this.subscriptions) {
+                sub.unsubscribe();
+            }
+            this.subscriptions = [];
+        })
+
+        this.tick$.next('init complete');
     }
 
     private closeEventHandler(code: number | null, signal: NodeJS.Signals | null) {
@@ -184,11 +241,6 @@ export class PowerShell {
         this.info('[>] child process emitted a \'close\' event');
         this.info('[>] exit code: %s', code);
         this.info('[>] exit signal: %s', signal);
-
-        if (this.isClosed) {
-            this.info('[>] already closed!');
-            return;
-        }
 
         this.info('[>]', this.stdin?.destroyed ? 'stdin destroyed' : 'stdin not destroyed');
         this.info('[>]', this.stdout?.destroyed ? 'stdout destroyed' : 'stdout not destroyed');
@@ -198,10 +250,13 @@ export class PowerShell {
         this.removeTempFile(this.out_verbose);
         this.removeTempFile(this.out_debug);
 
+        if (this.isRespawning) {
+            this.respawned$.next(true);
+        } else {
+            this.closed$.next(true);
+            this.info('[>] process closed');
+        }
 
-        this.isClosed = true;
-        this.closed$.next(true);
-        this.info('[>] process closed');
     }
 
     private initProcess() {
@@ -231,6 +286,9 @@ export class PowerShell {
 
         const read_out = new BufferReader(this.delimit_head, this.delimit_tail);
         const read_err = new BufferReader(this.delimit_head, this.delimit_tail);
+
+        this.subscriptions.push(read_out.subject, read_err.subject);
+
         this.stdout.pipe(read_out);
         this.stderr.pipe(read_err);
 
@@ -264,73 +322,71 @@ export class PowerShell {
 
     }
 
-    private initQueue() {
+    private initHandler() {
 
-        this.info('[>] init queue');
-
-        // invokes a command
-        // enforces timeout
-        // errors calling subject
-        const invoke = (command: Command) => {
-            this.info('[>] invoking: %s', command.command)
-            this.info('[>] subject observed: %s', command.subject.observed)
-            this.info('[>] subject closed: %s', command.subject.closed)
-
-            if (!this.stdin.writable){
-                this.error('[>] stdin not writable')
-                command.subject.error(new Error('stdin not writable'));
-                return throwError(() => new Error('stdin not writable'));
-            }
-
-            this.stdin.write(Buffer.from(command.wrapped));
-
-            return this.out$.pipe(
-                take(1),
-                timeout(this.timeout),
-                map(result => ({ command, result })),
-                catchError(err => {
-                    this.error('[X] error in pipe: %O', err)
-                    let error = err;
-                    if (error.name === 'TimeoutError') {
-                        error = new Error(`Command timed out after ${this.timeout} milliseconds. Check the full-powershell docs for more information.`)
-                    }
-                    command.subject.error(error);
-                    return throwError(() => error);
-                })
-            );
-        }
-
-        // selects next command from queue
-        const handler = () => {
-            this.info('[>] %s pending', this.queue.length)
-            return of(this.queue.shift() as Command)
-                .pipe(
-                    filter(command => command !== undefined),
-                    switchMap(command => invoke(command as Command))
-                )
-        }
+        this.info('[>] init handler');
 
         // subscribes to tick to trigger check for next command
         // concatMaps command handler to enforce order
-        let sub = this.tick$.pipe(
+        this.tick$.pipe(
             tap(caller => this.info('[>] tick %s', caller)),
-            concatMap(_ => handler())
-        )
-            .subscribe({
-                next: ({ command, result }) => {
-                    this.info('[>] complete: %s', command.command)
-                    command.subject.next(result); // emit from subject returned by call()
-                    command.subject.complete(); // complete subject returned by call()
-                    this.tick$.next('command complete'); // check for next command in queue
-                },
-                error: err => {
-                    this.info('[>] error...')
-                    sub.unsubscribe(); // clean up this observable chain
-                    this.destroy().subscribe(_ => this.init()) // start a new process
-                }
-            })
+            skipWhile(_ => this.isClosing),
+            concatMap(_ => of(this.queue.shift() as Command).pipe(
+                filter(command => command !== undefined),
+                tap(() => this.isRunning = true),
+                switchMap(command => this.invoke(command)),
+                tap(() => {
+                    this.isRunning = false
+                    this.tick$.next('command complete')
+                }),
+            )),
+        ).subscribe()
+    }
 
-        this.tick$.next('queue initialised');
+    private invoke(command: Command) {
+
+        this.info('[>] invoking: %s', command.command)
+        this.info('[>] subject observed: %s', command.subject.observed)
+        this.info('[>] subject closed: %s', command.subject.closed)
+
+        if (!this.stdin.writable) {
+            this.error('[>] stdin not writable')
+            command.subject.error(new Error('stdin not writable'));
+            return throwError(() => new Error('stdin not writable'));
+        }
+
+        this.stdin.write(Buffer.from(command.wrapped));
+
+        const invoke = this.out$.pipe(
+            take(1),
+            timeout(this.timeout),
+            map(result => {
+                this.info('[>] complete: %s', command.command)
+                command.subject.next(result); // emit from subject returned by call()
+                command.subject.complete(); // complete subject returned by call()
+            }),
+            catchError(error => {
+                this.info('[>] error: %O', error)
+                if (error.name === 'TimeoutError') {
+                    error = new Error(`Command timed out after ${this.timeout} milliseconds. Check the full-powershell docs for more information.`)
+                }
+                // respawn the process
+                // only error the current subject once the new process is started
+                return this.respawn().pipe(
+                    tap(_ => {
+                        this.isRunning = false;
+                        this.init();
+                        command.subject.error(error);
+                    }),
+                )
+            })
+        );
+
+        const closed = this.closing$.pipe(
+            tap(_ => this.info('[>] cancelling running task')),
+            map(_ => throwError(() => new Error('Process has been closed')))
+        );
+        return race([invoke, closed])
     }
 
     public call(command: string, format: Format = 'json') {
@@ -377,18 +433,57 @@ export class PowerShell {
         }
     }
 
+    public respawn() {
+
+        this.info('[>] respawn called');
+
+        if (this.isRespawning) {
+            this.info('[>] already respawning!');
+            return this.respawned$;
+        }
+
+        this.isRespawning = true;
+
+        this.kill();
+
+        return this.respawned$;
+
+    }
+
     public destroy() {
 
         this.info('[>] destroy called');
 
+        if (this.isClosing) {
+            this.info('[>] already closing!');
+            return this.closed$;
+        }
+
+        this.isClosing = true;
+
+        this.closing$.next(true);
+
+        this.kill();
+
+        return this.closed$;
+
+    }
+
+    private kill() {
+
+        if (this.powershell.pid) {
+            this.info('[>] killing process %s', this.powershell.pid);
+            process.kill(this.powershell.pid, 'SIGTERM');
+        }
+
         // try each until 'close' event has been received
         from<Array<'SIGKILL' | 'SIGTERM' | 'SIGINT'>>([
-            'SIGKILL',
-            'SIGTERM',
-            'SIGINT'
+            // 'SIGTERM', // normal
+            'SIGINT',  // ctrl+c
+            'SIGKILL', // force kill
         ]).pipe(
-            concatMap(item => of(item).pipe(delay(3000))),
-            takeUntil(this.closed$),
+            concatMap(item => of(item).pipe(delay(10000))),
+            takeUntil(race([this.closed$, this.respawned$])),
             tap(signal => this.info('[>] sending signal %s', signal))
         )
             .subscribe(signal => {
@@ -397,8 +492,5 @@ export class PowerShell {
                     process.kill(this.powershell.pid, signal);
                 }
             })
-
-        return this.closed$
-
     }
 }
