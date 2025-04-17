@@ -13,17 +13,11 @@
         "prepublishOnly": "npm test"
     },
     "keywords": [
-        "rxjs",
-        "typescript",
         "powershell",
         "pwsh",
-        "cli",
-        "shell",
-        "command",
-        "cmd",
-        "windows",
-        "linux",
-        "stream"
+        "streams",
+        "rxjs",
+        "typescript"
     ],
     "author": "Richard Dunn",
     "license": "MIT",
