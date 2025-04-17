@@ -1,20 +1,30 @@
 ![Full PowerShell Waves](img/waves.svg)
 
 # Full Powershell
-Capture, separate and serialise all [6 PowerShell message streams](https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_redirection) at their source.
 
-# How it works
-PowerShell has 6 message streams in addition to **Stdout** and **Stderr**. Piping these 6 streams all through stdout simultaneously removes each stream's semantics and is a nightmare to parse - unexpected/intermittent warning or error messages (very common when remoting) can easily break your application. 
+Capture all 6 PowerShell [message streams](https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_redirection) at their source.
 
-Full-PowerShell captures and serialises these streams _before_ returning them, so output from one stream will not affect the other.
+## Background
 
-This library wraps your commands in an `Invoke-Command` block that pipes their output into 6 individual streams. All 6 streams are captured while your command/script executes, once it has completed the streams are serialised as JSON, returned to parent Node.js process, and finally deserialised as individual streams.
+PowerShell has 6 message streams:
 
-Invocations can be subscribed to as an RxJS Observable, or as a Promise. 
+| Stream    | Write Cmdlet      |
+| --------  | -------           |
+| Success   | `Write-Output`    |
+| Error     | `Write-Error`     |
+| Warning   | `Write-Warning`   |
+| Verbose   | `Write-Verbose`   |
+| Debug     | `Write-Debug`     |
+| Information   | `Write-Information`  `Write-Host` |
 
-The source code is fairly concise, take a look at [index.ts](https://github.com/daverickdunn/full-powershell/blob/master/src/index.ts) and [wrapper.ts](https://github.com/daverickdunn/full-powershell/blob/master/src/wrapper.ts) to see exactly how it works.
+Cramming these 6 streams all through **stdout** concurrently removes each stream's semantics and is a nightmare to parse - unexpected warning or error messages (very common when remoting!) can easily break your parsing logic.
 
-# API
+Full-PowerShell serialises -> deserialises these streams, so output from one stream will not affect the other.
+
+Commands can be subscribed to as an RxJS Observable, or as a Promise. 
+
+Take a look at [index.ts](https://github.com/daverickdunn/full-powershell/blob/master/src/index.ts) and [wrapper.ts](https://github.com/daverickdunn/full-powershell/blob/master/src/wrapper.ts) to see exactly how it works.
+
 
 ## The `PowerShell` class.
 Spawns a PowerShell child process on instantiation and exposes methods to read/write to/from that process:
