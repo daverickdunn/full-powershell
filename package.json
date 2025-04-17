@@ -1,6 +1,6 @@
 {
     "name": "full-powershell",
-    "version": "3.1.1",
+    "version": "3.1.2",
     "description": "Capture and serialize all PowerShell output streams in Node.js using RxJS or Promises.",
     "main": "dist/index.js",
     "types": "dist/index.d.ts",
