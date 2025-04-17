@@ -4,12 +4,15 @@ import { debug } from 'debug';
 import { existsSync, unlinkSync } from 'fs';
 import os from 'os';
 import {
+    BehaviorSubject,
     Observable,
     Subject,
     catchError,
+    combineLatest,
     concatMap,
     delay,
     filter,
+    first,
     firstValueFrom,
     from,
     map,
@@ -129,11 +132,10 @@ export class PowerShell {
     private tick$: Subject<string>;
     private isRunning = false;
 
-    private isRespawning = false;
+    private respawning$: BehaviorSubject<boolean>;
     private respawned$: SubjectWithPromise<boolean>;
 
-    private isClosing = false;
-    private closing$: SubjectWithPromise<boolean>;
+    private closing$: BehaviorSubject<boolean>;
     private closed$: SubjectWithPromise<boolean>;
 
     private subscriptions: Array<Subject<any>> = [];
@@ -180,7 +182,7 @@ export class PowerShell {
     }
 
     public get isBusy() {
-        return this.queue.length > 0 || this.isRunning || this.isClosing;
+        return this.queue.length > 0 || this.isRunning || this.closing$.value;
     }
 
     private init() {
@@ -195,15 +197,15 @@ export class PowerShell {
         this.initReaders();
         this.initHandler();
 
-        this.isRespawning = false;
+        this.respawning$ = new BehaviorSubject<boolean>(false);
         this.respawned$ = new SubjectWithPromise<boolean>();
 
-        this.isClosing = false;
+        this.closing$ = new BehaviorSubject<boolean>(false);
         this.closed$ = new SubjectWithPromise<boolean>();
-        this.closing$ = new SubjectWithPromise<boolean>();
 
         this.subscriptions = [
             this.tick$,
+            this.respawning$,
             this.respawned$,
             this.closed$,
             this.closing$
@@ -250,7 +252,7 @@ export class PowerShell {
         this.removeTempFile(this.out_verbose);
         this.removeTempFile(this.out_debug);
 
-        if (this.isRespawning) {
+        if (this.respawning$.value) {
             this.respawned$.next(true);
         } else {
             this.closed$.next(true);
@@ -330,7 +332,6 @@ export class PowerShell {
         // concatMaps command handler to enforce order
         this.tick$.pipe(
             tap(caller => this.info('[>] tick %s', caller)),
-            skipWhile(_ => this.isClosing),
             concatMap(_ => of(this.queue.shift() as Command).pipe(
                 filter(command => command !== undefined),
                 tap(() => this.isRunning = true),
@@ -349,15 +350,23 @@ export class PowerShell {
         this.info('[>] subject observed: %s', command.subject.observed)
         this.info('[>] subject closed: %s', command.subject.closed)
 
-        if (!this.stdin.writable) {
-            this.error('[>] stdin not writable')
-            command.subject.error(new Error('stdin not writable'));
-            return throwError(() => new Error('stdin not writable'));
-        }
+        const invoke$ = combineLatest([
+            this.respawning$,
+            this.closing$
+        ]).pipe(
+            skipWhile(([respawning, closing]) => respawning || closing),
+            take(1),
+            tap(() => {
+                if (!this.stdin.writable) {
+                    this.error('[>] stdin not writable')
+                    command.subject.error(new Error('stdin not writable'));
+                    throw new Error('stdin not writable');
+                }
+                this.stdin.write(Buffer.from(command.wrapped));
+            })
+        )
 
-        this.stdin.write(Buffer.from(command.wrapped));
-
-        const invoke = this.out$.pipe(
+        const output$ = this.out$.pipe(
             take(1),
             timeout(this.timeout),
             map(result => {
@@ -382,11 +391,15 @@ export class PowerShell {
             })
         );
 
-        const closed = this.closing$.pipe(
+        const cancel$ = this.closing$.pipe(
+            first(_ => _),
             tap(_ => this.info('[>] cancelling running task')),
             map(_ => throwError(() => new Error('Process has been closed')))
         );
-        return race([invoke, closed])
+
+        return invoke$.pipe(
+            switchMap(_ => race([output$, cancel$]))
+        )
     }
 
     public call(command: string, format: Format = 'json') {
@@ -437,16 +450,18 @@ export class PowerShell {
 
         this.info('[>] respawn called');
 
-        if (this.isRespawning) {
-            this.info('[>] already respawning!');
-            return this.respawned$;
-        }
-
-        this.isRespawning = true;
-
-        this.kill();
-
-        return this.respawned$;
+        return this.respawning$.pipe(
+            take(1),
+            switchMap(respawning => {
+                if (respawning) {
+                    this.info('[>] already respawning!');
+                    return this.respawned$;
+                }
+                this.respawning$.next(true);
+                this.kill();
+                return this.respawned$;
+            })
+        )
 
     }
 
@@ -454,19 +469,18 @@ export class PowerShell {
 
         this.info('[>] destroy called');
 
-        if (this.isClosing) {
-            this.info('[>] already closing!');
-            return this.closed$;
-        }
-
-        this.isClosing = true;
-
-        this.closing$.next(true);
-
-        this.kill();
-
-        return this.closed$;
-
+        return this.closing$.pipe(
+            take(1),
+            switchMap(closing => {
+                if (closing) {
+                    this.info('[>] already closing!');
+                    return this.closed$;
+                }
+                this.closing$.next(true);
+                this.kill();
+                return this.closed$;
+            })
+        )
     }
 
     private kill() {
