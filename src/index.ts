@@ -469,18 +469,18 @@ export class PowerShell {
 
         this.info('[>] destroy called');
 
-        return this.closing$.pipe(
-            take(1),
-            switchMap(closing => {
+        this.closing$.pipe(take(1))
+            .subscribe(closing => {
                 if (closing) {
                     this.info('[>] already closing!');
-                    return this.closed$;
+                } else {
+                    this.closing$.next(true);
+                    this.kill();
                 }
-                this.closing$.next(true);
-                this.kill();
-                return this.closed$;
             })
-        )
+
+        return this.closed$;
+
     }
 
     private kill() {
