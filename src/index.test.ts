@@ -239,7 +239,7 @@ test('Command Timeout', (done) => {
                 expect(res.success[0]).toMatch('Second Call');
                 shell.destroy().subscribe(_ => done());
             }
-        })
+        })  
 
 });
 
@@ -290,15 +290,19 @@ test('Parallel Shells', (done) => {
 
 });
 
-test('Destroy', (done) => {
+test('Destroy While Running', (done) => {
 
     const shell = new PowerShell();
 
     // timeout should cause this call to error
-    shell.call(`Start-Process 'pwsh sleep 15'`).subscribe()
+    shell.call(`Start-Process 'pwsh sleep 15'`).subscribe({
+        error: err => {
+            expect(err.message).toEqual(expect.stringContaining('Process has been closed'));
+        }
+    })
 
     shell.destroy().subscribe((res) => {
-        expect(true).toEqual(true);
+        expect(res).toEqual(true);
         done();
     })
 
@@ -311,30 +315,47 @@ test('Destroy after Error', (done) => {
     });
 
     // timeout should cause this call to error
-    shell.call('Start-Sleep -Seconds 3;')
+    const sub = shell.call('Start-Sleep -Seconds 3;')
         .subscribe({
             error: err => {
 
                 expect(err.message).toEqual(expect.stringContaining('Command timed out'));
-
+                
                 shell.destroy().subscribe((result) => {
                     expect(result).toEqual(true);
                     done();
                 })
 
-            }
+            },
+
         })
+
+});
+
+test('Destroy Async', async () => {
+
+    const shell = new PowerShell();
+
+    // timeout should cause this call to error
+    shell.call(`Start-Process 'pwsh sleep 15'`).subscribe({
+        error: err => {
+            expect(err.message).toEqual(expect.stringContaining('Process has been closed'));
+        }
+    })
+
+    const destroyed = await shell.destroy().promise();
+    expect(destroyed).toEqual(true);
 
 });
 
 test('Process Closed', (done) => {
 
     const shell = new PowerShell({
-        timeout: 3000 // note the timeout
+        timeout: 4000 // note the timeout
     });
 
     // timeout should cause this call to error
-    shell.call(`Start-Sleep -Seconds 4;`).subscribe({
+    shell.call(`Start-Sleep -Seconds 5;`).subscribe({
         error: err => {
             expect(err.message).toEqual(expect.stringContaining('Process has been closed'));
         }
@@ -353,5 +374,27 @@ test('Process Closed', (done) => {
     setTimeout(() => {
         done();
     }, 5000)
+
+});
+
+test('Process Killed Externally', (done) => {
+
+    const shell = new PowerShell({
+        timeout: 10000 // note the timeout
+    });
+
+    // timeout should cause this call to error
+    shell.call(`Start-Sleep -Seconds 5;`).subscribe({
+        error: err => {
+            expect(err.message).toEqual(expect.stringContaining('Process has been closed'));
+            shell.destroy().subscribe(_ => {
+                done();
+            })
+        }
+    })
+
+    setTimeout(() => {
+        process.kill(shell.pid!, 'SIGKILL');
+    }, 1000)
 
 });
