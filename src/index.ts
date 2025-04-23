@@ -26,6 +26,8 @@ import {
 import { PowerShellProcess, PowerShellStreams } from './process';
 import { Format } from './wrapper';
 
+export { PowerShellStreams } from './process';
+
 interface Command {
     command: string;
     format: Format;
